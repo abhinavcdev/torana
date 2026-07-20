@@ -24,12 +24,12 @@ One run on an Apple-silicon Mac (Docker Desktop, 15s, 64 connections) — expect
 
 | | torana 0.2 | Caddy 2 | nginx (stock) |
 |---|---|---|---|
-| Throughput | 5,116 qps | 4,844 qps | 1,374 qps |
-| p50 / p99 | 10ms / 58ms | 13ms / 25ms | 50ms / 120ms |
+| Throughput | 5,321 qps | 4,825 qps | 1,375 qps |
+| p50 / p99 | 11ms / 31ms | 13ms / 29ms | 51ms / 83ms |
 | Idle memory | 4.4 MiB | 20 MiB | 9.6 MiB |
 | Image size | 4.7 MB | 60 MB | 62 MB |
 
-Before upstream pooling landed in 0.2.0, torana measured ~1,060 qps on the same setup — pooling closed the gap with Caddy on throughput and p50. Caddy still has the better p99 tail.
+History on this setup: v0.1 (no pooling) measured ~1,060 qps with a 152ms p99; upstream keep-alive pooling brought throughput to Caddy parity, and disabling Nagle (TCP_NODELAY on both accepted and upstream sockets) brought the p99 tail from 58ms down to ~31ms — level with Caddy within run-to-run variance.
 
 ## Native alternative (no Docker)
 

@@ -99,7 +99,9 @@ fn spawn_hanging_backend() -> u16 {
 fn free_port() -> u16 {
     use std::sync::atomic::{AtomicU16, Ordering};
     static NEXT_PORT: AtomicU16 = AtomicU16::new(0);
-    let base = 41000 + (std::process::id() % 4000) as u16;
+    // Stay below the OS ephemeral range (49152+ on macOS/Linux) so client
+    // and backend sockets the OS hands out can never collide with us.
+    let base = 20000 + (std::process::id() % 9000) as u16;
     loop {
         let port = base + NEXT_PORT.fetch_add(1, Ordering::Relaxed) % 20000;
         if TcpListener::bind(("127.0.0.1", port)).is_ok() {
@@ -143,35 +145,46 @@ mod tempdir {
 impl TestProxy {
     /// Write `config` to a temp file, start the proxy, and wait until
     /// `ready_port` accepts connections.
-    fn start(config: &str, ready_port: u16) -> Self {
+    /// Start the proxy and wait until `ready_port` accepts connections.
+    /// Fails (with the proxy's stderr) if the process dies or never listens.
+    fn try_start(config: &str, ready_port: u16) -> Result<Self, String> {
         let dir = tempdir::TempDir::new();
         let config_path = dir.path().join("torana.toml");
+        let stderr_path = dir.path().join("stderr.log");
         std::fs::write(&config_path, config).unwrap();
 
         let process = Command::new(env!("CARGO_BIN_EXE_torana"))
             .args(["--config", config_path.to_str().unwrap()])
             .stdout(Stdio::null())
-            .stderr(Stdio::null())
+            .stderr(std::fs::File::create(&stderr_path).unwrap())
             .spawn()
             .expect("Failed to start proxy");
 
-        let proxy = Self {
+        let mut proxy = Self {
             process,
             _config_dir: dir,
         };
-        proxy.wait_ready(ready_port);
-        proxy
-    }
 
-    fn wait_ready(&self, port: u16) {
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
-            if TcpStream::connect(("127.0.0.1", port)).is_ok() {
-                return;
+            if TcpStream::connect(("127.0.0.1", ready_port)).is_ok() {
+                return Ok(proxy);
+            }
+            if let Ok(Some(status)) = proxy.process.try_wait() {
+                return Err(format!(
+                    "proxy exited with {} before listening on port {}. Stderr:\n{}",
+                    status,
+                    ready_port,
+                    std::fs::read_to_string(&stderr_path).unwrap_or_default()
+                ));
             }
             std::thread::sleep(Duration::from_millis(50));
         }
-        panic!("Proxy did not start listening on port {} within 10s", port);
+        Err(format!(
+            "proxy did not listen on port {} within 10s. Stderr:\n{}",
+            ready_port,
+            std::fs::read_to_string(&stderr_path).unwrap_or_default()
+        ))
     }
 }
 
@@ -180,6 +193,22 @@ impl Drop for TestProxy {
         let _ = self.process.kill();
         let _ = self.process.wait();
     }
+}
+
+/// Allocate fresh ports and start the proxy, retrying with new ports when a
+/// transient collision (e.g. another process grabbed the port between
+/// allocation and bind) makes startup fail. Returns (proxy, listen, metrics).
+fn start_proxy(make_config: impl Fn(u16, u16) -> String) -> (TestProxy, u16, u16) {
+    let mut last_err = String::new();
+    for _ in 0..3 {
+        let listen_port = free_port();
+        let metrics_port = free_port();
+        match TestProxy::try_start(&make_config(listen_port, metrics_port), listen_port) {
+            Ok(proxy) => return (proxy, listen_port, metrics_port),
+            Err(e) => last_err = e,
+        }
+    }
+    panic!("proxy failed to start after 3 attempts: {}", last_err);
 }
 
 fn http_config(listen_port: u16, metrics_port: u16, upstreams: &[(u16, u32)]) -> String {
@@ -217,9 +246,7 @@ upstream = [
 #[test]
 fn http_proxy_forwards_to_backend() {
     let backend_port = spawn_backend("Hello from backend");
-    let listen_port = free_port();
-    let config = http_config(listen_port, free_port(), &[(backend_port, 100)]);
-    let _proxy = TestProxy::start(&config, listen_port);
+    let (_proxy, listen_port, _) = start_proxy(|l, m| http_config(l, m, &[(backend_port, 100)]));
 
     let response = reqwest::blocking::Client::new()
         .get(format!("http://127.0.0.1:{}/test.txt", listen_port))
@@ -235,13 +262,8 @@ fn http_proxy_forwards_to_backend() {
 fn load_balancing_hits_all_upstreams() {
     let backend_a = spawn_backend("Backend A");
     let backend_b = spawn_backend("Backend B");
-    let listen_port = free_port();
-    let config = http_config(
-        listen_port,
-        free_port(),
-        &[(backend_a, 50), (backend_b, 50)],
-    );
-    let _proxy = TestProxy::start(&config, listen_port);
+    let (_proxy, listen_port, _) =
+        start_proxy(|l, m| http_config(l, m, &[(backend_a, 50), (backend_b, 50)]));
 
     let client = reqwest::blocking::Client::new();
     let mut bodies = std::collections::HashSet::new();
@@ -264,7 +286,6 @@ fn load_balancing_hits_all_upstreams() {
 #[test]
 fn https_listener_terminates_tls() {
     let backend_port = spawn_backend("HTTPS Backend");
-    let listen_port = free_port();
 
     let dir = tempdir::TempDir::new();
     let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
@@ -273,8 +294,9 @@ fn https_listener_terminates_tls() {
     std::fs::write(&cert_path, cert.cert.pem()).unwrap();
     std::fs::write(&key_path, cert.key_pair.serialize_pem()).unwrap();
 
-    let config = format!(
-        r#"
+    let (_proxy, listen_port, _) = start_proxy(|listen_port, metrics_port| {
+        format!(
+            r#"
 [global]
 log_level = "error"
 metrics_addr = "127.0.0.1:{metrics_port}"
@@ -289,13 +311,13 @@ tls_key = "{key_path}"
 name = "default"
 upstream = [{{ addr = "http://127.0.0.1:{backend_port}" }}]
 "#,
-        metrics_port = free_port(),
-        listen_port = listen_port,
-        cert_path = cert_path.display(),
-        key_path = key_path.display(),
-        backend_port = backend_port,
-    );
-    let _proxy = TestProxy::start(&config, listen_port);
+            metrics_port = metrics_port,
+            listen_port = listen_port,
+            cert_path = cert_path.display(),
+            key_path = key_path.display(),
+            backend_port = backend_port,
+        )
+    });
 
     let client = reqwest::blocking::Client::builder()
         .use_rustls_tls()
@@ -314,10 +336,8 @@ upstream = [{{ addr = "http://127.0.0.1:{backend_port}" }}]
 
 #[test]
 fn dead_upstream_returns_502() {
-    let listen_port = free_port();
     let dead_port = free_port();
-    let config = http_config(listen_port, free_port(), &[(dead_port, 100)]);
-    let _proxy = TestProxy::start(&config, listen_port);
+    let (_proxy, listen_port, _) = start_proxy(|l, m| http_config(l, m, &[(dead_port, 100)]));
 
     let response = reqwest::blocking::Client::new()
         .get(format!("http://127.0.0.1:{}/", listen_port))
@@ -331,10 +351,11 @@ fn dead_upstream_returns_502() {
 #[test]
 fn hanging_upstream_returns_504() {
     let backend_port = spawn_hanging_backend();
-    let listen_port = free_port();
-    let mut config = http_config(listen_port, free_port(), &[(backend_port, 100)]);
-    config.push_str("\n[route.timeout]\ntotal = \"500ms\"\n");
-    let _proxy = TestProxy::start(&config, listen_port);
+    let (_proxy, listen_port, _) = start_proxy(|l, m| {
+        let mut config = http_config(l, m, &[(backend_port, 100)]);
+        config.push_str("\n[route.timeout]\ntotal = \"500ms\"\n");
+        config
+    });
 
     let start = Instant::now();
     let response = reqwest::blocking::Client::new()
@@ -355,9 +376,7 @@ fn upstream_connections_are_reused() {
     use std::sync::atomic::Ordering;
 
     let (backend_port, connections) = spawn_keepalive_backend("pooled");
-    let listen_port = free_port();
-    let config = http_config(listen_port, free_port(), &[(backend_port, 100)]);
-    let _proxy = TestProxy::start(&config, listen_port);
+    let (_proxy, listen_port, _) = start_proxy(|l, m| http_config(l, m, &[(backend_port, 100)]));
 
     let client = reqwest::blocking::Client::new();
     for i in 0..20 {
@@ -382,10 +401,8 @@ fn upstream_connections_are_reused() {
 #[test]
 fn metrics_endpoint_reports_requests() {
     let backend_port = spawn_backend("ok");
-    let listen_port = free_port();
-    let metrics_port = free_port();
-    let config = http_config(listen_port, metrics_port, &[(backend_port, 100)]);
-    let _proxy = TestProxy::start(&config, listen_port);
+    let (_proxy, listen_port, metrics_port) =
+        start_proxy(|l, m| http_config(l, m, &[(backend_port, 100)]));
 
     let client = reqwest::blocking::Client::new();
     client

@@ -135,7 +135,11 @@ async fn accept_or_retry(
 ) -> (tokio::net::TcpStream, SocketAddr) {
     loop {
         match listener.accept().await {
-            Ok(conn) => return conn,
+            Ok((stream, peer)) => {
+                // Nagle + delayed ACK adds tens of ms to tail latency.
+                let _ = stream.set_nodelay(true);
+                return (stream, peer);
+            }
             Err(e) => {
                 // Transient errors (EMFILE, ECONNABORTED) must not kill the
                 // accept loop.

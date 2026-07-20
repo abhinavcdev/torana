@@ -22,10 +22,14 @@ const HOP_BY_HOP_HEADERS: [&str; 8] = [
 pub type UpstreamClient = Client<HttpConnector, hyper::body::Incoming>;
 
 pub fn build_upstream_client() -> UpstreamClient {
+    let mut connector = HttpConnector::new();
+    // Nagle's algorithm interacts badly with delayed ACKs and shows up
+    // directly in tail latency; disable it on upstream connections.
+    connector.set_nodelay(true);
     Client::builder(TokioExecutor::new())
         .pool_idle_timeout(Duration::from_secs(90))
         .pool_max_idle_per_host(128)
-        .build_http()
+        .build(connector)
 }
 
 pub async fn proxy_request(

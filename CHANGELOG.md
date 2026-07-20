@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Changed
+
+- Set `TCP_NODELAY` on accepted client sockets and upstream connections,
+  cutting benchmark p99 latency roughly in half (Nagle + delayed-ACK
+  interaction).
+- Removed the legacy comparison scripts and docs superseded by `bench/`
+  and `cargo test`; `scripts/gen-certs.sh` replaces `setup.sh` for local
+  TLS material.
+- Added binary release workflow (Linux musl + macOS, x86_64 + arm64).
+
 ## [0.2.0] - 2026-07-20
 
 ### Changed
