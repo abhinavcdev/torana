@@ -1,0 +1,12 @@
+[global]
+log_level = "error"
+
+[[listener]]
+addr = "[::]:80"
+protocol = "http"
+
+[[route]]
+name = "default"
+upstream = [
+  { addr = "http://localhost:9999" }
+]

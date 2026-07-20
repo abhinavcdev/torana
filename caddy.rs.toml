@@ -1,0 +1,25 @@
+[global]
+workers = "auto"
+log_format = "json"
+log_level = "info"
+metrics_addr = "[::]:9090"
+
+[[listener]]
+addr = "[::]:80"
+protocol = "http"
+
+[[listener]]
+addr = "[::]:443"
+protocol = "https"
+tls_cert = "./certs/tls.crt"
+tls_key = "./certs/tls.key"
+
+[[route]]
+name = "default"
+upstream = [
+  { addr = "http://localhost:9999", weight = 100 }
+]
+
+[route.timeout]
+connect = "200ms"
+total = "30s"
