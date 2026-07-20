@@ -8,7 +8,7 @@ A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. 
 
 *torana* (तोरण) is the Indian ceremonial gateway arch — a small, sturdy structure everything passes through.
 
-> **Status: early stage (v0.2).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.
+> **Status: early stage (v0.3).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.
 
 ## What it does
 
@@ -18,6 +18,7 @@ A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. 
 - **Weighted round-robin load balancing** across multiple upstreams
 - **Zero-downtime config reload** via `SIGHUP` — validated before swap, upstream changes apply immediately
 - **Per-route total timeout** (default 30s) — hanging upstreams return `504` instead of stalling clients
+- **Graceful shutdown** — SIGTERM/SIGINT stop accepting, drain in-flight requests (15s cap), then exit
 - **Correct proxy header handling** — strips hop-by-hop headers, sets `X-Forwarded-For` / `X-Forwarded-Proto`
 - **Prometheus metrics** (`http_requests_total`, `http_request_duration_seconds`, `upstream_connection_errors`)
 - **Structured JSON logging** via `tracing`
@@ -33,7 +34,6 @@ Planned but **not implemented** — the config schema reserves fields for some o
 - Retries, circuit breaking, active health checks
 - Header rewriting, traffic mirroring, mTLS (`tls_client_ca`)
 - Automatic HTTPS / ACME — if you want certificates managed for you, use [Caddy](https://caddyserver.com)
-- Connection draining on shutdown
 
 If you need these today, use Caddy, nginx, or Envoy. torana trades features for a small, auditable, dependency-free binary.
 
@@ -105,11 +105,12 @@ Fields marked ⚠️ parse without error (so configs stay forward-compatible) bu
 | Signal | Behavior |
 |---|---|
 | `SIGHUP` | Reload and validate config; on error, keep the current config |
-| `SIGTERM` / `SIGINT` | Log and exit (in-flight connections are dropped — draining is future work) |
+| `SIGTERM` / `SIGINT` | Stop accepting, drain in-flight connections (up to 15s), exit |
 
 ## Observability
 
 - `GET /metrics` on `global.metrics_addr` serves Prometheus text format
+- `GET /healthz` on the same listener returns `200 ok` for liveness/readiness probes
 - Logs are structured JSON on stdout by default; set `log_format` to anything else for human-readable output
 
 ## Development

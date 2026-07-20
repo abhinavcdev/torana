@@ -18,10 +18,13 @@ use std::collections::HashMap;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::RwLock;
+use tokio::sync::{watch, RwLock};
 
 /// Applied when a route does not set timeout.total.
 const DEFAULT_TOTAL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// How long shutdown waits for in-flight connections to finish.
+const DRAIN_TIMEOUT: Duration = Duration::from_secs(15);
 
 type ProxyBody = BoxBody<Bytes, hyper::Error>;
 type LbCache = Arc<RwLock<HashMap<String, Arc<upstream::LoadBalancer>>>>;
@@ -35,15 +38,26 @@ struct Cli {
     config: String,
 }
 
+/// Everything a connection needs, cloned per accept.
+#[derive(Clone)]
+struct Handler {
+    config_handle: Arc<RwLock<config::Config>>,
+    metrics: Arc<metrics::Metrics>,
+    lb_cache: LbCache,
+    upstream_client: proxy::UpstreamClient,
+    shutdown_rx: watch::Receiver<bool>,
+    /// Each live connection holds a clone; shutdown waits for the strong
+    /// count to fall back to the listeners' baseline.
+    conn_tracker: Arc<()>,
+}
+
 async fn shutdown_signal() {
     let mut sigterm = tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
         .expect("Failed to install SIGTERM handler");
     tokio::select! {
-        _ = sigterm.recv() => tracing::info!("SIGTERM received, shutting down"),
-        _ = tokio::signal::ctrl_c() => tracing::info!("SIGINT received, shutting down"),
+        _ = sigterm.recv() => tracing::info!("SIGTERM received, draining connections"),
+        _ = tokio::signal::ctrl_c() => tracing::info!("SIGINT received, draining connections"),
     }
-    // In-flight connections are dropped; connection draining is not
-    // implemented yet.
 }
 
 #[tokio::main]
@@ -59,19 +73,23 @@ async fn main() -> anyhow::Result<()> {
 
     tracing::info!("torana starting");
 
-    let config_handle: Arc<RwLock<config::Config>> = Arc::new(RwLock::new(config.clone()));
-    let upstream_client = proxy::build_upstream_client();
-    let lb_cache: LbCache = Arc::new(RwLock::new(upstream::build_lb_map(&config)));
+    let (shutdown_tx, shutdown_rx) = watch::channel(false);
+    let (metrics, registry) = init_metrics()?;
+    let handler = Handler {
+        config_handle: Arc::new(RwLock::new(config.clone())),
+        metrics: Arc::new(metrics),
+        lb_cache: Arc::new(RwLock::new(upstream::build_lb_map(&config))),
+        upstream_client: proxy::build_upstream_client(),
+        shutdown_rx,
+        conn_tracker: Arc::new(()),
+    };
 
     // SIGHUP triggers a config reload that also rebuilds the load balancers.
     tokio::spawn(reload::watch_config_signal(
         cli.config.clone(),
-        config_handle.clone(),
-        lb_cache.clone(),
+        handler.config_handle.clone(),
+        handler.lb_cache.clone(),
     ));
-
-    let (metrics, registry) = init_metrics()?;
-    let metrics = Arc::new(metrics);
 
     let metrics_addr = config
         .global
@@ -93,39 +111,35 @@ async fn main() -> anyhow::Result<()> {
             .await
             .map_err(|e| anyhow::anyhow!("Failed to bind {}: {}", addr, e))?;
 
-        let config_handle = config_handle.clone();
-        let metrics = metrics.clone();
-        let lb_cache = lb_cache.clone();
-        let upstream_client = upstream_client.clone();
-
         if listener_cfg.protocol == "https" {
             let cert_path = listener_cfg.tls_cert.clone().expect("validated");
             let key_path = listener_cfg.tls_key.clone().expect("validated");
             let acceptor = tls::load_tls_config(&cert_path, &key_path)?;
             tracing::info!("HTTPS listener started on {}", addr);
-            tokio::spawn(run_https_listener(
-                tcp,
-                acceptor,
-                config_handle,
-                metrics,
-                lb_cache,
-                upstream_client,
-            ));
+            tokio::spawn(run_listener(tcp, Some(acceptor), handler.clone()));
         } else {
             tracing::info!("HTTP listener started on {}", addr);
-            tokio::spawn(run_http_listener(
-                tcp,
-                config_handle,
-                metrics,
-                lb_cache,
-                upstream_client,
-            ));
+            tokio::spawn(run_listener(tcp, None, handler.clone()));
         }
     }
 
     tracing::info!("torana ready");
 
     shutdown_signal().await;
+
+    // Stop accepting, ask in-flight connections to finish, then wait.
+    let _ = shutdown_tx.send(true);
+    let baseline = 1; // main's own handler clone is dropped below
+    let tracker = handler.conn_tracker.clone();
+    drop(handler);
+    let deadline = Instant::now() + DRAIN_TIMEOUT;
+    while Arc::strong_count(&tracker) > baseline && Instant::now() < deadline {
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+    let leftover = Arc::strong_count(&tracker) - baseline;
+    if leftover > 0 {
+        tracing::warn!("Drain timeout: {} connections still open", leftover);
+    }
     tracing::info!("Shutdown complete");
     Ok(())
 }
@@ -150,100 +164,79 @@ async fn accept_or_retry(
     }
 }
 
-async fn run_http_listener(
+/// Accept loop for one listener; `acceptor` is Some for HTTPS. Stops
+/// accepting when shutdown is signalled; live connections drain gracefully.
+async fn run_listener(
     listener: tokio::net::TcpListener,
-    config_handle: Arc<RwLock<config::Config>>,
-    metrics: Arc<metrics::Metrics>,
-    lb_cache: LbCache,
-    upstream_client: proxy::UpstreamClient,
+    acceptor: Option<tokio_rustls::TlsAcceptor>,
+    handler: Handler,
 ) {
+    let mut accept_shutdown = handler.shutdown_rx.clone();
     loop {
-        let (stream, peer) = accept_or_retry(&listener).await;
-        let config_handle = config_handle.clone();
-        let metrics = metrics.clone();
-        let lb_cache = lb_cache.clone();
-        let upstream_client = upstream_client.clone();
+        let (stream, peer) = tokio::select! {
+            conn = accept_or_retry(&listener) => conn,
+            _ = accept_shutdown.changed() => break,
+        };
+        let acceptor = acceptor.clone();
+        let handler = handler.clone();
 
         tokio::spawn(async move {
-            let io = hyper_util::rt::TokioIo::new(stream);
-            let service = service_fn(move |req: Request<hyper::body::Incoming>| {
-                let config_handle = config_handle.clone();
-                let metrics = metrics.clone();
-                let lb_cache = lb_cache.clone();
-                let upstream_client = upstream_client.clone();
-                handle_request(
-                    req,
-                    peer,
-                    "http",
-                    config_handle,
-                    metrics,
-                    lb_cache,
-                    upstream_client,
-                )
-            });
+            match acceptor {
+                Some(acceptor) => match acceptor.accept(stream).await {
+                    Ok(tls_stream) => {
+                        serve_connection(
+                            hyper_util::rt::TokioIo::new(tls_stream),
+                            peer,
+                            "https",
+                            handler,
+                        )
+                        .await
+                    }
+                    Err(e) => tracing::debug!("TLS handshake failed: {}", e),
+                },
+                None => {
+                    serve_connection(hyper_util::rt::TokioIo::new(stream), peer, "http", handler)
+                        .await
+                }
+            }
+        });
+    }
+}
 
-            if let Err(e) = hyper::server::conn::http1::Builder::new()
-                .serve_connection(io, service)
-                .await
-            {
+/// Serve one client connection, finishing the in-flight response before
+/// closing if shutdown is signalled mid-request.
+async fn serve_connection<I>(io: I, peer: SocketAddr, proto: &'static str, handler: Handler)
+where
+    I: hyper::rt::Read + hyper::rt::Write + Unpin + Send + 'static,
+{
+    let _guard = handler.conn_tracker.clone();
+    let mut conn_shutdown = handler.shutdown_rx.clone();
+
+    let service = service_fn(move |req: Request<hyper::body::Incoming>| {
+        let handler = handler.clone();
+        handle_request(req, peer, proto, handler)
+    });
+
+    let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, service);
+    let mut conn = std::pin::pin!(conn);
+
+    tokio::select! {
+        result = conn.as_mut() => {
+            if let Err(e) = result {
                 tracing::debug!("Connection error: {}", e);
             }
-        });
-    }
-}
-
-async fn run_https_listener(
-    listener: tokio::net::TcpListener,
-    acceptor: tokio_rustls::TlsAcceptor,
-    config_handle: Arc<RwLock<config::Config>>,
-    metrics: Arc<metrics::Metrics>,
-    lb_cache: LbCache,
-    upstream_client: proxy::UpstreamClient,
-) {
-    loop {
-        let (stream, peer) = accept_or_retry(&listener).await;
-        let acceptor = acceptor.clone();
-        let config_handle = config_handle.clone();
-        let metrics = metrics.clone();
-        let lb_cache = lb_cache.clone();
-        let upstream_client = upstream_client.clone();
-
-        tokio::spawn(async move {
-            let tls_stream = match acceptor.accept(stream).await {
-                Ok(s) => s,
-                Err(e) => {
-                    tracing::debug!("TLS handshake failed: {}", e);
-                    return;
-                }
-            };
-
-            let io = hyper_util::rt::TokioIo::new(tls_stream);
-            let service = service_fn(move |req: Request<hyper::body::Incoming>| {
-                let config_handle = config_handle.clone();
-                let metrics = metrics.clone();
-                let lb_cache = lb_cache.clone();
-                let upstream_client = upstream_client.clone();
-                handle_request(
-                    req,
-                    peer,
-                    "https",
-                    config_handle,
-                    metrics,
-                    lb_cache,
-                    upstream_client,
-                )
-            });
-
-            if let Err(e) = hyper::server::conn::http1::Builder::new()
-                .serve_connection(io, service)
-                .await
-            {
-                tracing::debug!("HTTPS connection error: {}", e);
+        }
+        _ = conn_shutdown.changed() => {
+            // Finish the current response, then close.
+            conn.as_mut().graceful_shutdown();
+            if let Err(e) = conn.as_mut().await {
+                tracing::debug!("Connection error during drain: {}", e);
             }
-        });
+        }
     }
 }
 
+/// Minimal HTTP server for /metrics (Prometheus text format) and /healthz.
 async fn serve_metrics(listener: tokio::net::TcpListener, registry: prometheus::Registry) {
     loop {
         let (mut stream, _) = accept_or_retry(&listener).await;
@@ -251,22 +244,45 @@ async fn serve_metrics(listener: tokio::net::TcpListener, registry: prometheus::
 
         tokio::spawn(async move {
             use prometheus::{Encoder, TextEncoder};
-            use tokio::io::AsyncWriteExt;
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
-            let encoder = TextEncoder::new();
-            let metric_families = registry.gather();
-            let mut buffer = Vec::new();
-            if let Err(e) = encoder.encode(&metric_families, &mut buffer) {
-                tracing::warn!("Failed to encode metrics: {}", e);
-                return;
-            }
+            // Read the request line to route; ignore the rest of the head.
+            let mut buf = [0u8; 1024];
+            let n = match tokio::time::timeout(Duration::from_secs(2), stream.read(&mut buf)).await
+            {
+                Ok(Ok(n)) if n > 0 => n,
+                _ => return,
+            };
+            let head = String::from_utf8_lossy(&buf[..n]);
+            let path = head
+                .lines()
+                .next()
+                .and_then(|line| line.split_whitespace().nth(1))
+                .unwrap_or("/");
+
+            let (status, content_type, body) = if path.starts_with("/healthz") {
+                ("200 OK", "text/plain", "ok".to_string())
+            } else {
+                let encoder = TextEncoder::new();
+                let mut buffer = Vec::new();
+                if let Err(e) = encoder.encode(&registry.gather(), &mut buffer) {
+                    tracing::warn!("Failed to encode metrics: {}", e);
+                    return;
+                }
+                (
+                    "200 OK",
+                    "text/plain; version=0.0.4",
+                    String::from_utf8_lossy(&buffer).into_owned(),
+                )
+            };
 
             let response = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/plain; version=0.0.4\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
-                buffer.len(),
-                String::from_utf8_lossy(&buffer)
+                "HTTP/1.1 {}\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                status,
+                content_type,
+                body.len(),
+                body
             );
-
             let _ = stream.write_all(response.as_bytes()).await;
             let _ = stream.flush().await;
         });
@@ -288,18 +304,15 @@ async fn handle_request(
     req: Request<hyper::body::Incoming>,
     client_addr: SocketAddr,
     client_proto: &'static str,
-    config_handle: Arc<RwLock<config::Config>>,
-    metrics: Arc<metrics::Metrics>,
-    lb_cache: LbCache,
-    upstream_client: proxy::UpstreamClient,
+    handler: Handler,
 ) -> Result<Response<ProxyBody>, hyper::Error> {
     let start = Instant::now();
-    metrics.http_requests_total.inc();
+    handler.metrics.http_requests_total.inc();
 
     // Request routing is not implemented yet: all traffic goes to the first
     // route. Read from the live config handle so SIGHUP reloads apply.
     let (upstream_addr, total_timeout) = {
-        let config = config_handle.read().await;
+        let config = handler.config_handle.read().await;
         let route = match config.route.first() {
             Some(route) => route,
             None => {
@@ -312,7 +325,7 @@ async fn handle_request(
         };
 
         let lb = {
-            let cache = lb_cache.read().await;
+            let cache = handler.lb_cache.read().await;
             cache.get(&route.name).cloned()
         };
         let upstream_addr = match lb.as_ref().and_then(|lb| lb.next()) {
@@ -343,26 +356,27 @@ async fn handle_request(
             &upstream_addr,
             client_addr,
             client_proto,
-            &upstream_client,
+            &handler.upstream_client,
         ),
     )
     .await;
 
     match result {
         Ok(Ok(response)) => {
-            metrics
+            handler
+                .metrics
                 .http_request_duration_seconds
                 .observe(start.elapsed().as_secs_f64());
             Ok(response.map(|body| body.boxed()))
         }
         Ok(Err(e)) => {
             tracing::error!(upstream = %upstream_addr, "Proxy request failed: {}", e);
-            metrics.upstream_connection_errors.inc();
+            handler.metrics.upstream_connection_errors.inc();
             Ok(error_response(StatusCode::BAD_GATEWAY, "Bad Gateway"))
         }
         Err(_) => {
             tracing::error!(upstream = %upstream_addr, timeout_ms = %total_timeout.as_millis(), "Upstream timed out");
-            metrics.upstream_connection_errors.inc();
+            handler.metrics.upstream_connection_errors.inc();
             Ok(error_response(
                 StatusCode::GATEWAY_TIMEOUT,
                 "Gateway Timeout",

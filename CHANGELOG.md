@@ -6,6 +6,16 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-07-20
+
+### Added
+
+- **Graceful shutdown with connection draining**: SIGTERM/SIGINT now stop
+  accepting, let in-flight requests complete (15s cap), then exit — safe
+  for rolling restarts behind an orchestrator.
+- **`/healthz` endpoint** on the metrics listener for liveness and
+  readiness probes.
+
 ### Changed
 
 - Set `TCP_NODELAY` on accepted client sockets and upstream connections,

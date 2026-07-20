@@ -80,6 +80,35 @@ fn spawn_keepalive_backend(
     (port, connections)
 }
 
+/// A backend that waits `delay_ms` before responding (for drain tests).
+fn spawn_slow_backend(body: &'static str, delay_ms: u64) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind backend");
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                let mut req = Vec::new();
+                while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf) {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => req.extend_from_slice(&buf[..n]),
+                    }
+                }
+                std::thread::sleep(Duration::from_millis(delay_ms));
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            });
+        }
+    });
+    port
+}
+
 /// A backend that accepts connections but never responds (for timeout tests).
 fn spawn_hanging_backend() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind backend");
@@ -144,9 +173,8 @@ mod tempdir {
 
 impl TestProxy {
     /// Write `config` to a temp file, start the proxy, and wait until
-    /// `ready_port` accepts connections.
-    /// Start the proxy and wait until `ready_port` accepts connections.
-    /// Fails (with the proxy's stderr) if the process dies or never listens.
+    /// `ready_port` accepts connections. Fails (with the proxy's stderr) if
+    /// the process dies or never listens.
     fn try_start(config: &str, ready_port: u16) -> Result<Self, String> {
         let dir = tempdir::TempDir::new();
         let config_path = dir.path().join("torana.toml");
@@ -425,6 +453,62 @@ fn metrics_endpoint_reports_requests() {
         metrics
     );
     assert!(metrics.contains("http_request_duration_seconds"));
+}
+
+#[test]
+fn graceful_shutdown_drains_inflight_requests() {
+    let backend_port = spawn_slow_backend("drained ok", 700);
+    let (mut proxy, listen_port, _) = start_proxy(|l, m| http_config(l, m, &[(backend_port, 100)]));
+
+    // Fire a request that will still be in flight when SIGTERM arrives.
+    let request = std::thread::spawn(move || {
+        reqwest::blocking::Client::new()
+            .get(format!("http://127.0.0.1:{}/", listen_port))
+            .timeout(Duration::from_secs(5))
+            .send()
+    });
+    std::thread::sleep(Duration::from_millis(200));
+
+    let _ = Command::new("kill")
+        .args(["-TERM", &proxy.process.id().to_string()])
+        .status();
+
+    // The in-flight response must complete despite the shutdown...
+    let response = request
+        .join()
+        .unwrap()
+        .expect("in-flight request should complete during drain");
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text().unwrap(), "drained ok");
+
+    // ...and the process must then exit cleanly on its own.
+    let deadline = Instant::now() + Duration::from_secs(5);
+    loop {
+        if let Ok(Some(status)) = proxy.process.try_wait() {
+            assert!(status.success(), "proxy exited with {}", status);
+            break;
+        }
+        assert!(
+            Instant::now() < deadline,
+            "proxy did not exit within 5s of SIGTERM"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+#[test]
+fn healthz_endpoint_responds() {
+    let backend_port = spawn_backend("ok");
+    let (_proxy, _listen, metrics_port) =
+        start_proxy(|l, m| http_config(l, m, &[(backend_port, 100)]));
+
+    let response = reqwest::blocking::Client::new()
+        .get(format!("http://127.0.0.1:{}/healthz", metrics_port))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .expect("healthz request failed");
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text().unwrap(), "ok");
 }
 
 #[test]
