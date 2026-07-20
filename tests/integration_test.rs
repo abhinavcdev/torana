@@ -50,14 +50,19 @@ fn spawn_hanging_backend() -> u16 {
     port
 }
 
-/// Reserve a free port. Racy in principle, but fine for tests: the OS does
-/// not reuse a just-released port immediately.
+/// Hand out ports for proxy configs. A shared counter (offset by pid so two
+/// test binaries can coexist) guarantees parallel tests in this process never
+/// get the same port; the bind check skips ports taken by other processes.
 fn free_port() -> u16 {
-    TcpListener::bind("127.0.0.1:0")
-        .unwrap()
-        .local_addr()
-        .unwrap()
-        .port()
+    use std::sync::atomic::{AtomicU16, Ordering};
+    static NEXT_PORT: AtomicU16 = AtomicU16::new(0);
+    let base = 41000 + (std::process::id() % 4000) as u16;
+    loop {
+        let port = base + NEXT_PORT.fetch_add(1, Ordering::Relaxed) % 20000;
+        if TcpListener::bind(("127.0.0.1", port)).is_ok() {
+            return port;
+        }
+    }
 }
 
 struct TestProxy {

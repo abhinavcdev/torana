@@ -2,6 +2,13 @@
 name = "caddyrs"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.75"
+description = "Tiny Rust-native reverse proxy for edge, sidecar, and embedded use"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/abhinavcdev/caddyrs"
+readme = "README.md"
+keywords = ["proxy", "reverse-proxy", "http", "load-balancer", "rustls"]
+categories = ["network-programming", "web-programming::http-server"]
 
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
