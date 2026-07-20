@@ -18,6 +18,19 @@ Reported per proxy: throughput (qps), p50/p99 latency, idle memory after load, a
 - All three proxies are HTTP/1.1, no TLS, default settings — this measures the plain forwarding hot path only.
 - torana and Caddy pool upstream connections; the nginx config here is stock (no `upstream` keepalive block), which is why default nginx trails on throughput.
 
+## Sample results
+
+One run on an Apple-silicon Mac (Docker Desktop, 15s, 64 connections) — expect different absolute numbers on your machine:
+
+| | torana 0.2 | Caddy 2 | nginx (stock) |
+|---|---|---|---|
+| Throughput | 5,116 qps | 4,844 qps | 1,374 qps |
+| p50 / p99 | 10ms / 58ms | 13ms / 25ms | 50ms / 120ms |
+| Idle memory | 4.4 MiB | 20 MiB | 9.6 MiB |
+| Image size | 4.7 MB | 60 MB | 62 MB |
+
+Before upstream pooling landed in 0.2.0, torana measured ~1,060 qps on the same setup — pooling closed the gap with Caddy on throughput and p50. Caddy still has the better p99 tail.
+
 ## Native alternative (no Docker)
 
 More representative latency on the Mac itself:
