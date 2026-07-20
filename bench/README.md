@@ -20,16 +20,16 @@ Reported per proxy: throughput (qps), p50/p99 latency, idle memory after load, a
 
 ## Sample results
 
-One run on an Apple-silicon Mac (Docker Desktop, 15s, 64 connections) — expect different absolute numbers on your machine:
+One run on an Apple-silicon Mac (Docker Desktop, 15s, 64 connections) — expect different absolute numbers on your machine, and expect Caddy/torana to trade places on individual metrics run to run within a few percent:
 
-| | torana 0.2 | Caddy 2 | nginx (stock) |
+| | torana 0.4 | Caddy 2 | nginx (stock) |
 |---|---|---|---|
-| Throughput | 5,321 qps | 4,825 qps | 1,375 qps |
-| p50 / p99 | 11ms / 31ms | 13ms / 29ms | 51ms / 83ms |
-| Idle memory | 4.4 MiB | 20 MiB | 9.6 MiB |
-| Image size | 4.7 MB | 60 MB | 62 MB |
+| Throughput | 5,276 qps | 4,510 qps | 1,322 qps |
+| p50 / p99 | 10ms / 34ms | 11ms / 48ms | 48ms / 155ms |
+| Idle memory | 4.8 MiB | 21 MiB | 9.7 MiB |
+| Image size | 4.8 MB | 60 MB | 62 MB |
 
-History on this setup: v0.1 (no pooling) measured ~1,060 qps with a 152ms p99; upstream keep-alive pooling brought throughput to Caddy parity, and disabling Nagle (TCP_NODELAY on both accepted and upstream sockets) brought the p99 tail from 58ms down to ~31ms — level with Caddy within run-to-run variance.
+History on this setup: v0.1 (no pooling) measured ~1,060 qps with a 152ms p99; upstream keep-alive pooling brought throughput to Caddy parity; disabling Nagle (TCP_NODELAY on both accepted and upstream sockets) brought the p99 tail down to ~31ms; v0.4 added route matching, active health checks, connect retries, and a coordinated SIGHUP reload path with no measurable throughput or latency regression versus v0.3, despite the added routing and health-check bookkeeping on the request hot path.
 
 ## Native alternative (no Docker)
 
