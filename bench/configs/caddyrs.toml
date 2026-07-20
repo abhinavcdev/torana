@@ -1,0 +1,13 @@
+[global]
+log_level = "error"
+metrics_addr = "0.0.0.0:9090"
+
+[[listener]]
+addr = "0.0.0.0:8080"
+protocol = "http"
+
+[[route]]
+name = "bench"
+upstream = [
+  { addr = "http://backend:80" },
+]
