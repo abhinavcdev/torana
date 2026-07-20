@@ -1,5 +1,9 @@
 # torana
 
+[![CI](https://github.com/abhinavcdev/torana/actions/workflows/ci.yml/badge.svg)](https://github.com/abhinavcdev/torana/actions/workflows/ci.yml)
+[![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
+[![Rust 1.75+](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](Cargo.toml)
+
 A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. Single static binary (~4 MB), millisecond startup, pure-Rust TLS via [rustls](https://github.com/rustls/rustls) — no OpenSSL, no runtime dependencies.
 
 *torana* (तोरण) is the Indian ceremonial gateway arch — a small, sturdy structure everything passes through.
@@ -63,7 +67,7 @@ EOF
 kill -HUP $(pgrep torana)
 ```
 
-For HTTPS termination, add a listener with a certificate (generate a self-signed test pair with `scripts/setup.sh`):
+For HTTPS termination, add a listener with a certificate (generate a self-signed test pair with `scripts/gen-certs.sh`):
 
 ```toml
 [[listener]]
@@ -118,8 +122,7 @@ cargo fmt --check
 
 Integration tests spawn real proxy processes against in-process backends on random ports, so they run in parallel and touch nothing outside the test.
 
-- [Local benchmarking guide](docs/TESTING.md) — side-by-side comparison scripts against Caddy
-- [Scripts overview](docs/SCRIPTS_OVERVIEW.md)
+- [Benchmarking](bench/README.md) — Docker harness comparing torana against Caddy and nginx, with sample results
 - [v0.1 design notes](docs/plans/2026-04-11-torana-v0.1-implementation.md)
 
 ## Relationship to Caddy
