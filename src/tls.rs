@@ -2,7 +2,7 @@ use anyhow::Result;
 use rustls_pemfile::{certs, private_key};
 use std::fs;
 use std::io::BufReader;
-use tokio_rustls::{TlsAcceptor, rustls};
+use tokio_rustls::{rustls, TlsAcceptor};
 
 pub fn load_tls_config(cert_path: &str, key_path: &str) -> Result<TlsAcceptor> {
     // Read certificate file

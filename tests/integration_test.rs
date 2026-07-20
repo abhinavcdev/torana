@@ -1,45 +1,129 @@
-use std::process::{Command, Child, Stdio};
-use std::time::Duration;
-use std::thread;
-use std::net::TcpListener;
-use std::sync::atomic::{AtomicBool, Ordering};
+//! End-to-end tests. Each test generates its own config on unique ports and
+//! runs its backends in-process, so tests are parallel-safe, need no root,
+//! and never touch processes they didn't spawn.
 
-// Global flag to ensure tests run sequentially to avoid port conflicts
-static TEST_RUNNING: AtomicBool = AtomicBool::new(false);
+use std::io::{Read, Write};
+use std::net::{TcpListener, TcpStream};
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
 
-struct TestGuard;
-impl TestGuard {
-    fn acquire() -> Self {
-        while TEST_RUNNING.compare_exchange_weak(false, true, Ordering::SeqCst, Ordering::Relaxed).is_err() {
-            thread::sleep(Duration::from_millis(100));
+/// A minimal in-process HTTP/1.1 backend that answers every request with a
+/// fixed body. Returns the port it listens on.
+fn spawn_backend(body: &'static str) -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind backend");
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                // Read until end of request headers.
+                let mut req = Vec::new();
+                while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                    match stream.read(&mut buf) {
+                        Ok(0) | Err(_) => return,
+                        Ok(n) => req.extend_from_slice(&buf[..n]),
+                    }
+                }
+                let response = format!(
+                    "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                    body.len(),
+                    body
+                );
+                let _ = stream.write_all(response.as_bytes());
+            });
         }
-        TestGuard
-    }
+    });
+    port
 }
-impl Drop for TestGuard {
-    fn drop(&mut self) {
-        TEST_RUNNING.store(false, Ordering::SeqCst);
-    }
+
+/// A backend that accepts connections but never responds (for timeout tests).
+fn spawn_hanging_backend() -> u16 {
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind backend");
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        let mut held = Vec::new();
+        for stream in listener.incoming().flatten() {
+            held.push(stream);
+        }
+    });
+    port
+}
+
+/// Reserve a free port. Racy in principle, but fine for tests: the OS does
+/// not reuse a just-released port immediately.
+fn free_port() -> u16 {
+    TcpListener::bind("127.0.0.1:0")
+        .unwrap()
+        .local_addr()
+        .unwrap()
+        .port()
 }
 
 struct TestProxy {
     process: Child,
+    _config_dir: tempdir::TempDir,
+}
+
+// Tiny tempdir helper so we don't need the tempfile crate.
+mod tempdir {
+    pub struct TempDir(std::path::PathBuf);
+    impl TempDir {
+        pub fn new() -> Self {
+            let dir = std::env::temp_dir().join(format!(
+                "caddyrs-test-{}-{}",
+                std::process::id(),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_nanos()
+            ));
+            std::fs::create_dir_all(&dir).unwrap();
+            TempDir(dir)
+        }
+        pub fn path(&self) -> &std::path::Path {
+            &self.0
+        }
+    }
+    impl Drop for TempDir {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
 }
 
 impl TestProxy {
-    fn start(config_path: &str) -> Self {
-        // Use the debug binary that was built
-        let binary_path = env!("CARGO_BIN_EXE_caddyrs");
-        let process = Command::new(binary_path)
-            .args(&["--config", config_path])
-            .env("RUST_LOG", "error")
+    /// Write `config` to a temp file, start the proxy, and wait until
+    /// `ready_port` accepts connections.
+    fn start(config: &str, ready_port: u16) -> Self {
+        let dir = tempdir::TempDir::new();
+        let config_path = dir.path().join("caddy.rs.toml");
+        std::fs::write(&config_path, config).unwrap();
+
+        let process = Command::new(env!("CARGO_BIN_EXE_caddyrs"))
+            .args(["--config", config_path.to_str().unwrap()])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
             .spawn()
             .expect("Failed to start proxy");
 
-        thread::sleep(Duration::from_millis(3000));
-        Self { process }
+        let proxy = Self {
+            process,
+            _config_dir: dir,
+        };
+        proxy.wait_ready(ready_port);
+        proxy
+    }
+
+    fn wait_ready(&self, port: u16) {
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            if TcpStream::connect(("127.0.0.1", port)).is_ok() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        }
+        panic!("Proxy did not start listening on port {} within 10s", port);
     }
 }
 
@@ -50,216 +134,233 @@ impl Drop for TestProxy {
     }
 }
 
-fn is_port_available(port: u16) -> bool {
-    TcpListener::bind(("127.0.0.1", port)).is_ok() && TcpListener::bind(("::1", port)).is_ok()
-}
+fn http_config(listen_port: u16, metrics_port: u16, upstreams: &[(u16, u32)]) -> String {
+    let upstream_entries: Vec<String> = upstreams
+        .iter()
+        .map(|(port, weight)| {
+            format!(
+                "  {{ addr = \"http://127.0.0.1:{}\", weight = {} }},",
+                port, weight
+            )
+        })
+        .collect();
+    format!(
+        r#"
+[global]
+log_level = "error"
+metrics_addr = "127.0.0.1:{metrics_port}"
 
-fn cleanup_processes() {
-    // Kill any remaining processes from previous tests
-    let _ = Command::new("pkill").arg("-9").arg("-f").arg("caddyrs").output();
-    thread::sleep(Duration::from_millis(300));
-    let _ = Command::new("pkill").arg("-9").arg("-f").arg("http.server").output();
-    thread::sleep(Duration::from_millis(300));
-    let _ = Command::new("pkill").arg("-9").arg("python3").output();
-    thread::sleep(Duration::from_millis(800));
+[[listener]]
+addr = "127.0.0.1:{listen_port}"
+protocol = "http"
 
-    // Wait for ports to be released - with lsof check for Mac compatibility
-    let mut attempts = 0;
-    loop {
-        let all_available = is_port_available(80) && is_port_available(443) &&
-           is_port_available(18080) && is_port_available(18081) &&
-           is_port_available(9999);
-
-        if all_available {
-            thread::sleep(Duration::from_millis(300));
-            return;
-        }
-
-        attempts += 1;
-        if attempts > 80 {
-            eprintln!("Warning: ports still in use after cleanup attempts");
-            // List what's using the ports
-            let _ = Command::new("sh")
-                .arg("-c")
-                .arg("lsof -i :80 -i :443 -i :18080 -i :18081 -i :9999 2>/dev/null | tail -5 || true")
-                .status();
-            return;
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
-}
-
-fn wait_for_port(port: u16, timeout_secs: u64) {
-    let start = std::time::Instant::now();
-    loop {
-        if !is_port_available(port) {
-            return;
-        }
-        if start.elapsed().as_secs() > timeout_secs {
-            panic!("Port {} did not become available within {} seconds", port, timeout_secs);
-        }
-        thread::sleep(Duration::from_millis(100));
-    }
+[[route]]
+name = "default"
+upstream = [
+{upstreams}
+]
+"#,
+        metrics_port = metrics_port,
+        listen_port = listen_port,
+        upstreams = upstream_entries.join("\n")
+    )
 }
 
 #[test]
-fn test_http_proxy_basic() {
-    let _guard = TestGuard::acquire();
-    cleanup_processes();
+fn http_proxy_forwards_to_backend() {
+    let backend_port = spawn_backend("Hello from backend");
+    let listen_port = free_port();
+    let config = http_config(listen_port, free_port(), &[(backend_port, 100)]);
+    let _proxy = TestProxy::start(&config, listen_port);
 
-    // Create a simple test file
-    let test_content = "Hello from backend";
-    let _ = std::fs::write("/tmp/test.txt", test_content);
+    let response = reqwest::blocking::Client::new()
+        .get(format!("http://127.0.0.1:{}/test.txt", listen_port))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .expect("request failed");
 
-    // Start simple backend on port 9999
-    let _backend = Command::new("python3")
-        .args(&["-m", "http.server", "9999", "--directory", "/tmp"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .expect("Failed to start backend");
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text().unwrap(), "Hello from backend");
+}
 
-    thread::sleep(Duration::from_millis(2000));
+#[test]
+fn load_balancing_hits_all_upstreams() {
+    let backend_a = spawn_backend("Backend A");
+    let backend_b = spawn_backend("Backend B");
+    let listen_port = free_port();
+    let config = http_config(
+        listen_port,
+        free_port(),
+        &[(backend_a, 50), (backend_b, 50)],
+    );
+    let _proxy = TestProxy::start(&config, listen_port);
 
-    let _proxy = TestProxy::start("tests/fixtures/basic.toml");
-    wait_for_port(80, 5);
-
-    thread::sleep(Duration::from_millis(1500));
-
-    // Test request - retry logic for stability
-    let mut last_error = None;
-    for attempt in 0..15 {
-        match reqwest::blocking::Client::new()
-            .get("http://localhost:80/test.txt")
+    let client = reqwest::blocking::Client::new();
+    let mut bodies = std::collections::HashSet::new();
+    for i in 0..10 {
+        let response = client
+            .get(format!("http://127.0.0.1:{}/", listen_port))
             .timeout(Duration::from_secs(5))
             .send()
-        {
-            Ok(response) => {
-                let status = response.status();
-                if status != 200 {
-                    eprintln!("Attempt {}: Got status {}", attempt, status);
-                    if attempt < 14 {
-                        thread::sleep(Duration::from_millis(300));
-                    }
-                    last_error = Some(format!("Status {}", status));
-                } else {
-                    return;
-                }
-            }
-            Err(e) => {
-                last_error = Some(e.to_string());
-                if attempt < 14 {
-                    thread::sleep(Duration::from_millis(300));
-                }
-            }
-        }
+            .unwrap_or_else(|e| panic!("request {} failed: {}", i, e));
+        assert_eq!(response.status(), 200);
+        bodies.insert(response.text().unwrap());
     }
-
-    panic!("Failed after retries: {:?}", last_error);
+    assert!(
+        bodies.contains("Backend A") && bodies.contains("Backend B"),
+        "expected both backends to serve traffic, got: {:?}",
+        bodies
+    );
 }
 
 #[test]
-fn test_https_proxy() {
-    let _guard = TestGuard::acquire();
-    cleanup_processes();
+fn https_listener_terminates_tls() {
+    let backend_port = spawn_backend("HTTPS Backend");
+    let listen_port = free_port();
 
-    // Create a simple test file
-    let _ = std::fs::write("/tmp/https_test.txt", "HTTPS Backend");
+    let dir = tempdir::TempDir::new();
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let cert_path = dir.path().join("tls.crt");
+    let key_path = dir.path().join("tls.key");
+    std::fs::write(&cert_path, cert.cert.pem()).unwrap();
+    std::fs::write(&key_path, cert.key_pair.serialize_pem()).unwrap();
 
-    // Start simple backend on port 9999
-    let _backend = Command::new("python3")
-        .args(&["-m", "http.server", "9999", "--directory", "/tmp"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok();
+    let config = format!(
+        r#"
+[global]
+log_level = "error"
+metrics_addr = "127.0.0.1:{metrics_port}"
 
-    thread::sleep(Duration::from_millis(2000));
+[[listener]]
+addr = "127.0.0.1:{listen_port}"
+protocol = "https"
+tls_cert = "{cert_path}"
+tls_key = "{key_path}"
 
-    let _proxy = TestProxy::start("tests/fixtures/https.toml");
-    wait_for_port(443, 5);
-
-    thread::sleep(Duration::from_millis(1500));
+[[route]]
+name = "default"
+upstream = [{{ addr = "http://127.0.0.1:{backend_port}" }}]
+"#,
+        metrics_port = free_port(),
+        listen_port = listen_port,
+        cert_path = cert_path.display(),
+        key_path = key_path.display(),
+        backend_port = backend_port,
+    );
+    let _proxy = TestProxy::start(&config, listen_port);
 
     let client = reqwest::blocking::Client::builder()
+        .use_rustls_tls()
         .danger_accept_invalid_certs(true)
         .timeout(Duration::from_secs(5))
         .build()
         .unwrap();
+    let response = client
+        .get(format!("https://127.0.0.1:{}/", listen_port))
+        .send()
+        .expect("https request failed");
 
-    // Retry logic for HTTPS
-    for attempt in 0..15 {
-        match client
-            .get("https://localhost:443/https_test.txt")
-            .send()
-        {
-            Ok(response) => {
-                let status = response.status();
-                if status != 200 {
-                    eprintln!("Attempt {}: Got status {}", attempt, status);
-                    if attempt < 14 {
-                        thread::sleep(Duration::from_millis(300));
-                    }
-                } else {
-                    return;
-                }
-            }
-            Err(e) => {
-                eprintln!("Attempt {}: Error: {}", attempt, e);
-                if attempt < 14 {
-                    thread::sleep(Duration::from_millis(300));
-                }
-            }
-        }
-    }
-
-    panic!("HTTPS request failed after retries");
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text().unwrap(), "HTTPS Backend");
 }
 
 #[test]
-fn test_load_balancing() {
-    let _guard = TestGuard::acquire();
-    cleanup_processes();
+fn dead_upstream_returns_502() {
+    let listen_port = free_port();
+    let dead_port = free_port();
+    let config = http_config(listen_port, free_port(), &[(dead_port, 100)]);
+    let _proxy = TestProxy::start(&config, listen_port);
 
-    // Create test files
-    let _ = std::fs::write("/tmp/backend1.txt", "Backend 1");
-    let _ = std::fs::write("/tmp/backend2.txt", "Backend 2");
+    let response = reqwest::blocking::Client::new()
+        .get(format!("http://127.0.0.1:{}/", listen_port))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .expect("request failed");
 
-    // Start 2 backends on different ports
-    let _b1 = Command::new("python3")
-        .args(&["-m", "http.server", "18080", "--directory", "/tmp"])
+    assert_eq!(response.status(), 502);
+}
+
+#[test]
+fn hanging_upstream_returns_504() {
+    let backend_port = spawn_hanging_backend();
+    let listen_port = free_port();
+    let mut config = http_config(listen_port, free_port(), &[(backend_port, 100)]);
+    config.push_str("\n[route.timeout]\ntotal = \"500ms\"\n");
+    let _proxy = TestProxy::start(&config, listen_port);
+
+    let start = Instant::now();
+    let response = reqwest::blocking::Client::new()
+        .get(format!("http://127.0.0.1:{}/", listen_port))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .expect("request failed");
+
+    assert_eq!(response.status(), 504);
+    assert!(
+        start.elapsed() < Duration::from_secs(3),
+        "timeout should trigger at ~500ms"
+    );
+}
+
+#[test]
+fn metrics_endpoint_reports_requests() {
+    let backend_port = spawn_backend("ok");
+    let listen_port = free_port();
+    let metrics_port = free_port();
+    let config = http_config(listen_port, metrics_port, &[(backend_port, 100)]);
+    let _proxy = TestProxy::start(&config, listen_port);
+
+    let client = reqwest::blocking::Client::new();
+    client
+        .get(format!("http://127.0.0.1:{}/", listen_port))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .expect("request failed");
+
+    let metrics = client
+        .get(format!("http://127.0.0.1:{}/metrics", metrics_port))
+        .timeout(Duration::from_secs(5))
+        .send()
+        .expect("metrics request failed")
+        .text()
+        .unwrap();
+
+    assert!(
+        metrics.contains("http_requests_total"),
+        "metrics output missing counters: {}",
+        metrics
+    );
+    assert!(metrics.contains("http_request_duration_seconds"));
+}
+
+#[test]
+fn invalid_config_exits_nonzero() {
+    let dir = tempdir::TempDir::new();
+    let config_path = dir.path().join("bad.toml");
+    // https:// upstreams are rejected until upstream TLS exists.
+    std::fs::write(
+        &config_path,
+        r#"
+[global]
+log_level = "error"
+
+[[listener]]
+addr = "127.0.0.1:1"
+protocol = "http"
+
+[[route]]
+name = "default"
+upstream = [{ addr = "https://example.com" }]
+"#,
+    )
+    .unwrap();
+
+    let status = Command::new(env!("CARGO_BIN_EXE_caddyrs"))
+        .args(["--config", config_path.to_str().unwrap()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
-        .spawn()
-        .ok();
+        .status()
+        .expect("failed to run proxy");
 
-    let _b2 = Command::new("python3")
-        .args(&["-m", "http.server", "18081", "--directory", "/tmp"])
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok();
-
-    thread::sleep(Duration::from_millis(2500));
-
-    let _proxy = TestProxy::start("tests/fixtures/lb.toml");
-    wait_for_port(80, 5);
-
-    thread::sleep(Duration::from_millis(2000));
-
-    // Make 10 requests - all should succeed
-    for i in 0..10 {
-        match reqwest::blocking::Client::new()
-            .get("http://localhost:80/backend1.txt")
-            .timeout(Duration::from_secs(5))
-            .send()
-        {
-            Ok(response) => {
-                assert_eq!(response.status(), 200, "Request {} failed with status {}", i, response.status());
-            }
-            Err(e) => {
-                panic!("Request {} failed: {}", i, e);
-            }
-        }
-    }
+    assert!(!status.success(), "proxy should reject invalid config");
 }

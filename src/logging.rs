@@ -23,14 +23,3 @@ pub fn init_logging(format: &str, level: &str) -> anyhow::Result<()> {
 
     Ok(())
 }
-
-// Structured access log entry (emitted after every request)
-#[derive(serde::Serialize)]
-pub struct AccessLog {
-    pub timestamp: String,
-    pub method: String,
-    pub path: String,
-    pub status: u16,
-    pub upstream_latency_ms: u64,
-    pub bytes_out: u64,
-}
