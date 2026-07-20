@@ -451,23 +451,28 @@
         <p class="col-label">Shipping today</p>
         <ul class="plain-list">
           <li><span class="tick">✓</span><span>HTTP/1.1 proxying with fully streamed bodies — no buffering</span></li>
+          <li><span class="tick">✓</span><span>Host- and path-based routing across multiple routes, first match wins</span></li>
           <li><span class="tick">✓</span><span>TLS termination with rustls; pure Rust, no OpenSSL</span></li>
           <li><span class="tick">✓</span><span>Upstream keep-alive pooling, TCP_NODELAY on both legs</span></li>
           <li><span class="tick">✓</span><span>Weighted round-robin load balancing</span></li>
+          <li><span class="tick">✓</span><span>Active health checks — unhealthy upstreams are skipped, not blackholed</span></li>
+          <li><span class="tick">✓</span><span>Retries on connect failure for GET/HEAD/OPTIONS with no body</span></li>
+          <li><span class="tick">✓</span><span>Sandboxed WASM plugins, opt-in — fuel-limited, no host access at all</span></li>
           <li><span class="tick">✓</span><span>Zero-downtime reload on SIGHUP, validated before swap</span></li>
           <li><span class="tick">✓</span><span>Graceful shutdown — in-flight requests finish before exit</span></li>
           <li><span class="tick">✓</span><span>Per-route timeouts — hanging upstreams return 504, not a stall</span></li>
           <li><span class="tick">✓</span><span>Prometheus <code>/metrics</code>, <code>/healthz</code>, structured JSON logs</span></li>
           <li><span class="tick">✓</span><span>Correct proxy headers — hop-by-hop stripped, X-Forwarded-* set</span></li>
+          <li><span class="tick">✓</span><span>Embeddable — the engine is a separate crate usable inside your own server</span></li>
         </ul>
       </div>
       <div>
         <p class="col-label">On the roadmap</p>
         <ul class="plain-list">
           <li><span class="tick no">—</span><span>HTTP/2 and HTTP/3</span></li>
-          <li><span class="tick no">—</span><span>Route matching — today all traffic goes to the first route</span></li>
           <li><span class="tick no">—</span><span>TLS to upstreams (https:// upstreams are rejected, not faked)</span></li>
-          <li><span class="tick no">—</span><span>Retries, circuit breaking, health checks</span></li>
+          <li><span class="tick no">—</span><span>Circuit breaking — retries and health checks exist; a faster-ejecting breaker doesn't yet</span></li>
+          <li><span class="tick no">—</span><span>Header rewriting, traffic mirroring, mTLS</span></li>
           <li><span class="tick no">—</span><span>Automatic HTTPS — use <a href="https://caddyserver.com">Caddy</a> if you want managed certs</span></li>
         </ul>
       </div>
@@ -548,6 +553,7 @@ total = <span class="ac">"30s"</span></pre>
       <a href="#docs-quickstart">Quick start</a>
       <div class="dn-label">Reference</div>
       <a href="#docs-config">Configuration</a>
+      <a href="#docs-embed">Using it as a library</a>
       <a href="#docs-signals">Signals &amp; reloads</a>
       <a href="#docs-observability">Observability</a>
       <div class="dn-label">Operations</div>
@@ -575,9 +581,9 @@ cargo build --release
         <h3>Prebuilt binaries</h3>
         <p>Tagged releases publish static binaries for Linux (musl, runs on any distro) and macOS, both x86_64 and arm64:</p>
         <div class="code-card">
-          <div class="code-head"><span>linux x86_64</span><button class="copy-btn" data-copy="curl -L https://github.com/abhinavcdev/torana/releases/latest/download/torana-v0.3.0-x86_64-unknown-linux-musl.tar.gz | tar xz&#10;./torana --config torana.toml">copy</button></div>
+          <div class="code-head"><span>linux x86_64</span><button class="copy-btn" data-copy="curl -L https://github.com/abhinavcdev/torana/releases/latest/download/torana-v0.4.0-x86_64-unknown-linux-musl.tar.gz | tar xz&#10;./torana --config torana.toml">copy</button></div>
           <pre>curl -L https://github.com/abhinavcdev/torana/releases/latest/download/\
-torana-v0.3.0-x86_64-unknown-linux-musl.tar.gz | tar xz
+torana-v0.4.0-x86_64-unknown-linux-musl.tar.gz | tar xz
 ./torana --config torana.toml</pre>
         </div>
         <h3>Docker</h3>
@@ -643,12 +649,17 @@ tls_key = <span class="ac">"./certs/tls.key"</span></pre>
               <tr><td><code>listener.protocol</code></td><td><span class="pill on">enforced</span></td><td class="td-note">http or https</td></tr>
               <tr><td><code>listener.tls_cert / tls_key</code></td><td><span class="pill on">enforced</span></td><td class="td-note">PEM paths, required when protocol = https</td></tr>
               <tr><td><code>listener.tls_client_ca</code></td><td><span class="pill off">planned</span></td><td class="td-note">mTLS</td></tr>
-              <tr><td><code>route.name</code></td><td><span class="pill on">enforced</span></td><td class="td-note">identifier used in logs</td></tr>
+              <tr><td><code>route.name</code></td><td><span class="pill on">enforced</span></td><td class="td-note">identifier used in logs and metrics</td></tr>
+              <tr><td><code>route.host</code></td><td><span class="pill on">enforced</span></td><td class="td-note">exact hostname, or "*.example.com" for subdomains; unset matches any host</td></tr>
+              <tr><td><code>route.path</code></td><td><span class="pill on">enforced</span></td><td class="td-note">prefix match on segment boundaries; unset matches any path</td></tr>
               <tr><td><code>route.upstream[].addr</code></td><td><span class="pill on">enforced</span></td><td class="td-note">http://host:port — https upstreams are rejected</td></tr>
               <tr><td><code>route.upstream[].weight</code></td><td><span class="pill on">enforced</span></td><td class="td-note">relative integer weight, default 100</td></tr>
+              <tr><td><code>route.retries</code></td><td><span class="pill on">enforced</span></td><td class="td-note">max attempts for GET/HEAD/OPTIONS with no body; default 2 with multiple upstreams</td></tr>
+              <tr><td><code>route.health_check.*</code></td><td><span class="pill on">enforced</span></td><td class="td-note">path/interval/timeout; absent = always healthy</td></tr>
+              <tr><td><code>route.plugin</code></td><td><span class="pill on">enforced*</span></td><td class="td-note">WASM request filter path — *needs <code>--features plugins</code></td></tr>
               <tr><td><code>route.timeout.total</code></td><td><span class="pill on">enforced</span></td><td class="td-note">duration to upstream response headers, default 30s</td></tr>
               <tr><td><code>route.timeout.connect / first_byte</code></td><td><span class="pill off">planned</span></td><td class="td-note">only total is enforced</td></tr>
-              <tr><td><code>route.when</code></td><td><span class="pill off">planned</span></td><td class="td-note">route matching — first route receives all traffic today</td></tr>
+              <tr><td><code>route.when</code></td><td><span class="pill off">planned</span></td><td class="td-note">reserved for a future CEL-based matcher; use host/path today</td></tr>
               <tr><td><code>route.headers / mirror</code></td><td><span class="pill off">planned</span></td><td class="td-note">header rewriting, traffic mirroring</td></tr>
             </tbody>
           </table>
@@ -657,6 +668,54 @@ tls_key = <span class="ac">"./certs/tls.key"</span></pre>
         <p>Duration strings accept <code>ms</code>, <code>s</code>, and <code>m</code>: <code>"500ms"</code>, <code>"30s"</code>, <code>"5m"</code>. A bare number is rejected — units are mandatory.</p>
         <h3>Weights</h3>
         <p>Weights are relative, reduced by their greatest common divisor: <code>90 / 10</code> produces the same schedule as <code>9 / 1</code>. An upstream with no weight gets 100. The scheduler interleaves upstreams rather than sending long runs to one host.</p>
+        <h3>Routing</h3>
+        <p>Routes are matched in config order — first match wins. Put specific <code>host</code>/<code>path</code> combinations first and a constraint-free route last as a catch-all. A request that matches no route gets <code>404</code>.</p>
+        <div class="code-card">
+          <div class="code-head"><span>host + path routing</span><button class="copy-btn" data-copy='[[route]]&#10;name = "api"&#10;host = "api.example.com"&#10;path = "/v1"&#10;upstream = [{ addr = "http://127.0.0.1:3000" }]&#10;retries = 2&#10;&#10;[route.health_check]&#10;path = "/healthz"&#10;interval = "10s"&#10;timeout = "2s"&#10;&#10;[[route]]&#10;name = "default"&#10;upstream = [{ addr = "http://127.0.0.1:4000" }]'>copy</button></div>
+          <pre><span class="cm">[[route]]</span>
+name = <span class="ac">"api"</span>
+host = <span class="ac">"api.example.com"</span>
+path = <span class="ac">"/v1"</span>
+upstream = [{ addr = <span class="ac">"http://127.0.0.1:3000"</span> }]
+retries = 2
+
+<span class="cm">[route.health_check]</span>
+path = <span class="ac">"/healthz"</span>
+interval = <span class="ac">"10s"</span>
+timeout = <span class="ac">"2s"</span>
+
+<span class="cm">[[route]]</span>              <span class="cm"># catch-all, no host/path — put it last</span>
+name = <span class="ac">"default"</span>
+upstream = [{ addr = <span class="ac">"http://127.0.0.1:4000"</span> }]</pre>
+        </div>
+        <h3>Retries</h3>
+        <p>Only <code>GET</code>, <code>HEAD</code>, and <code>OPTIONS</code> requests with an empty body are retried, and only on a connect-level failure — a request that reached the upstream is never retried, so a non-idempotent request is never double-executed. Retried attempts skip upstreams already tried this request and prefer upstreams the health check considers up.</p>
+        <h3>Sandboxed WASM plugins</h3>
+        <p>Build with <code>cargo build --release --features plugins</code> (off by default — wasmtime's Cranelift JIT roughly doubles the binary, from ~4.6&nbsp;MB to ~11&nbsp;MB). A plugin is a WASM module exporting <code>memory</code>, <code>alloc(len) -&gt; ptr</code>, and <code>on_request(method_ptr, method_len, path_ptr, path_len) -&gt; i32</code>: return <code>0</code> to allow, a code in <code>400..600</code> to deny with that status, anything else denies with <code>403</code>. No host functions are exposed — a plugin cannot reach the filesystem, network, or process; wasmtime's sandbox is the entire boundary, and every call runs under a fuel limit so a runaway loop is denied with <code>500</code> instead of hanging the request.</p>
+        <div class="code-card">
+          <div class="code-head"><span>attach a plugin to a route</span><button class="copy-btn" data-copy='[[route]]&#10;name = "api"&#10;plugin = "./plugins/auth-filter.wasm"&#10;upstream = [{ addr = "http://127.0.0.1:3000" }]'>copy</button></div>
+          <pre><span class="cm">[[route]]</span>
+name = <span class="ac">"api"</span>
+plugin = <span class="ac">"./plugins/auth-filter.wasm"</span>
+upstream = [{ addr = <span class="ac">"http://127.0.0.1:3000"</span> }]</pre>
+        </div>
+      </section>
+
+      <section id="docs-embed">
+        <h2>Using it as a library</h2>
+        <p>The proxy engine is a separate crate, <code>torana-core</code>, with none of the standalone binary's listener/signal machinery. Embed it inside a hyper server you already run instead of running torana as a separate process:</p>
+        <div class="code-card">
+          <div class="code-head"><span>embed ProxyEngine</span><button class="copy-btn" data-copy='use torana_core::{Config, ProxyEngine, Metrics};&#10;use std::sync::Arc;&#10;&#10;let engine = ProxyEngine::new(config, Arc::new(metrics));&#10;engine.spawn_health_probers().await;&#10;&#10;// inside your own service_fn:&#10;let response = engine.handle(req, client_addr, "http").await?;'>copy</button></div>
+          <pre>use torana_core::{Config, ProxyEngine, Metrics};
+use std::sync::Arc;
+
+let engine = ProxyEngine::new(config, Arc::new(metrics));
+engine.spawn_health_probers().await;
+
+<span class="cm">// inside your own service_fn:</span>
+let response = engine.handle(req, client_addr, <span class="ac">"http"</span>).await?;</pre>
+        </div>
+        <p><code>Server</code> (what the <code>torana</code> binary uses) is a thin wrapper around <code>ProxyEngine</code> that adds listener binding, SIGHUP reload, and graceful shutdown on top — read <code>torana-core/src/server.rs</code> if you want that full behavior instead of wiring it up yourself.</p>
       </section>
 
       <section id="docs-signals">
@@ -721,12 +780,12 @@ kill -HUP $(pgrep torana)</pre>
         <h3>Kubernetes sidecar</h3>
         <p>Build the image from the repo Dockerfile, push it to your registry, and mount the config from a ConfigMap. Probes hit <code>/healthz</code>; graceful draining makes rolling restarts drop zero requests.</p>
         <div class="code-card">
-          <div class="code-head"><span>pod spec (excerpt)</span><button class="copy-btn" data-copy='containers:&#10;  - name: app&#10;    image: your-app&#10;  - name: torana&#10;    image: your-registry/torana:0.3.0&#10;    args: ["--config", "/etc/torana/torana.toml"]&#10;    ports:&#10;      - containerPort: 8080&#10;    volumeMounts:&#10;      - name: torana-config&#10;        mountPath: /etc/torana&#10;    livenessProbe:&#10;      httpGet: { path: /healthz, port: 9090 }&#10;    readinessProbe:&#10;      httpGet: { path: /healthz, port: 9090 }&#10;volumes:&#10;  - name: torana-config&#10;    configMap:&#10;      name: torana-config'>copy</button></div>
+          <div class="code-head"><span>pod spec (excerpt)</span><button class="copy-btn" data-copy='containers:&#10;  - name: app&#10;    image: your-app&#10;  - name: torana&#10;    image: your-registry/torana:0.4.0&#10;    args: ["--config", "/etc/torana/torana.toml"]&#10;    ports:&#10;      - containerPort: 8080&#10;    volumeMounts:&#10;      - name: torana-config&#10;        mountPath: /etc/torana&#10;    livenessProbe:&#10;      httpGet: { path: /healthz, port: 9090 }&#10;    readinessProbe:&#10;      httpGet: { path: /healthz, port: 9090 }&#10;volumes:&#10;  - name: torana-config&#10;    configMap:&#10;      name: torana-config'>copy</button></div>
           <pre>containers:
   - name: app
     image: <span class="ac">your-app</span>
   - name: torana
-    image: <span class="ac">your-registry/torana:0.3.0</span>
+    image: <span class="ac">your-registry/torana:0.4.0</span>
     args: [<span class="ac">"--config"</span>, <span class="ac">"/etc/torana/torana.toml"</span>]
     ports:
       - containerPort: 8080
@@ -773,7 +832,7 @@ docker compose -f bench/docker-compose.yml down</pre>
 
       <section id="docs-roadmap">
         <h2>Roadmap</h2>
-        <p>In rough priority order: HTTP/2 (client-facing and upstream), request matching so multiple routes work, TLS to upstreams, retries with budgets, circuit breaking, active health checks, header rewriting, mirroring, and mTLS. The config schema already reserves fields for most of these — configs written today keep working.</p>
+        <p>Route matching, active health checks, connect retries, and a sandboxed WASM plugin hook shipped in 0.4. In rough priority order from here: HTTP/2 (client-facing and upstream), TLS to upstreams, a circuit breaker that ejects a flapping upstream faster than health checks alone, header rewriting, traffic mirroring, and mTLS. The config schema already reserves fields for most of these — configs written today keep working.</p>
         <p>If one of these matters to you, <a href="https://github.com/abhinavcdev/torana/issues">open an issue</a> — early-stage projects reorder roadmaps for real users.</p>
       </section>
     </div>

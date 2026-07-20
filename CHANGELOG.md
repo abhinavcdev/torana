@@ -6,6 +6,44 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-07-20
+
+### Added
+
+- **Host- and path-based routing**: `route.host` (exact or `*.` wildcard)
+  and `route.path` (prefix, segment-boundary matched) let multiple routes
+  coexist; first match in config order wins, with a catch-all fallback.
+  Previously every request went to the first configured route.
+- **Active health checks**: `[route.health_check]` probes each upstream on
+  an interval; the load balancer skips upstreams the check considers down,
+  and fails open (ignores health state) rather than blackholing all traffic
+  if every upstream looks unhealthy at once.
+- **Retries**: `route.retries` controls how many upstreams a `GET`/`HEAD`/
+  `OPTIONS` request with no body will try before giving up. Only
+  connect-level failures are retried, and only for requests with no body to
+  replay — a request that reached an upstream is never retried, so
+  non-idempotent requests are never double-executed.
+- **Sandboxed WASM plugins** behind a new `plugins` Cargo feature (off by
+  default — wasmtime adds a Cranelift JIT and roughly doubles the binary).
+  `route.plugin` points at a WASM module that can allow or deny a request
+  by method/path; no host functions are exposed, and execution is
+  fuel-limited, so a plugin cannot access the filesystem, network, or
+  process, and cannot hang a request by looping.
+- **Embeddable core**: the engine now lives in a new `torana-core` library
+  crate (`ProxyEngine`, usable inside your own hyper server) with `torana`
+  reduced to a thin CLI wrapper (`Server`) around it. This is a workspace
+  restructuring, not a behavior change, for the default binary.
+- SIGHUP reload now rebuilds load balancers, health probers, and the
+  plugin cache together, so a bad plugin or health-check config aborts the
+  whole reload rather than half-applying it.
+
+### Changed
+
+- Upstream request bodies are boxed (`BoxBody<Bytes, hyper::Error>`)
+  instead of the raw `hyper::body::Incoming` type, to allow constructing a
+  fresh empty body per retry attempt without buffering real request
+  bodies. Streaming behavior for non-retried requests is unchanged.
+
 ## [0.3.0] - 2026-07-20
 
 ### Added

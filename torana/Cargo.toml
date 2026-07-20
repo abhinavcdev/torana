@@ -1,0 +1,28 @@
+[package]
+name = "torana"
+description = "Tiny Rust-native reverse proxy for edge, sidecar, and embedded use"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+readme = "../README.md"
+keywords = ["proxy", "reverse-proxy", "http", "load-balancer", "rustls"]
+categories = ["network-programming", "web-programming::http-server"]
+
+[[bin]]
+name = "torana"
+path = "src/main.rs"
+
+[dependencies]
+torana-core = { version = "0.4.0", path = "../torana-core" }
+tokio = { version = "1.40", features = ["rt-multi-thread", "macros"] }
+clap = { version = "4.5", features = ["derive"] }
+anyhow = "1.0"
+
+[features]
+plugins = ["torana-core/plugins"]
+
+[dev-dependencies]
+reqwest = { version = "0.11", features = ["blocking", "rustls-tls"] }
+rcgen = "0.13"

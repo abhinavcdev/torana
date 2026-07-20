@@ -2,8 +2,9 @@ FROM rust:1-alpine AS builder
 RUN apk add --no-cache musl-dev
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
-COPY src ./src
-RUN cargo build --release
+COPY torana-core ./torana-core
+COPY torana ./torana
+RUN cargo build --release -p torana
 
 FROM scratch
 COPY --from=builder /app/target/release/torana /torana

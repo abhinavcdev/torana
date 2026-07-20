@@ -1,0 +1,34 @@
+[package]
+name = "torana-core"
+description = "Embeddable reverse proxy engine: TLS termination, weighted load balancing, health checks, sandboxed WASM plugins"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+tokio = { version = "1.40", features = ["rt-multi-thread", "net", "signal", "sync", "time", "io-util", "macros"] }
+hyper = { version = "1.4", features = ["full"] }
+hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
+http-body-util = "0.1"
+bytes = "1.5"
+rustls = { version = "0.23", features = ["std", "ring"] }
+rustls-pemfile = "2.1"
+tokio-rustls = "0.25"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
+prometheus = "0.13"
+thiserror = "1.0"
+anyhow = "1.0"
+wasmtime = { version = "26", optional = true }
+
+[features]
+# Off by default: wasmtime adds several MB and a Cranelift dependency, which
+# conflicts with torana's small-binary story. Opt in with --features plugins.
+plugins = ["dep:wasmtime"]
+
+[dev-dependencies]
+rcgen = "0.13"

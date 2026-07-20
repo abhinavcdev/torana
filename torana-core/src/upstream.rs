@@ -51,6 +51,39 @@ impl LoadBalancer {
         let idx = self.counter.fetch_add(1, Ordering::Relaxed) % self.upstreams.len();
         self.upstreams.get(idx)
     }
+
+    /// Health- and retry-aware selection: skips upstreams in `exclude`
+    /// (already tried this request) and prefers upstreams the health
+    /// registry considers up. Falls back to a healthy-but-excluded upstream,
+    /// and finally fails open (returns the next candidate regardless of
+    /// health) rather than blackholing all traffic on a bad health check.
+    pub async fn next_healthy(
+        &self,
+        health: &crate::health::HealthRegistry,
+        exclude: &[String],
+    ) -> Option<&UpstreamPool> {
+        if self.upstreams.is_empty() {
+            return None;
+        }
+        let len = self.upstreams.len();
+        let start = self.counter.fetch_add(1, Ordering::Relaxed);
+
+        for i in 0..len {
+            let candidate = &self.upstreams[(start + i) % len];
+            if !exclude.iter().any(|e| e == &candidate.addr)
+                && health.is_healthy(&candidate.addr).await
+            {
+                return Some(candidate);
+            }
+        }
+        for i in 0..len {
+            let candidate = &self.upstreams[(start + i) % len];
+            if health.is_healthy(&candidate.addr).await {
+                return Some(candidate);
+            }
+        }
+        Some(&self.upstreams[start % len])
+    }
 }
 
 fn gcd(a: u32, b: u32) -> u32 {
@@ -127,5 +160,60 @@ mod tests {
     fn zero_weight_treated_as_one() {
         let lb = LoadBalancer::new(vec![pool("a", 0)]);
         assert_eq!(lb.next().unwrap().addr, "a");
+    }
+
+    #[tokio::test]
+    async fn next_healthy_skips_unhealthy() {
+        let lb = LoadBalancer::new(vec![pool("a", 50), pool("b", 50)]);
+        let health = crate::health::HealthRegistry::new();
+        health.set("a", false).await;
+
+        let picks: Vec<String> = {
+            let mut v = vec![];
+            for _ in 0..4 {
+                v.push(lb.next_healthy(&health, &[]).await.unwrap().addr.clone());
+            }
+            v
+        };
+        assert!(
+            picks.iter().all(|p| p == "b"),
+            "expected only b, got {:?}",
+            picks
+        );
+    }
+
+    #[tokio::test]
+    async fn next_healthy_skips_excluded() {
+        let lb = LoadBalancer::new(vec![pool("a", 50), pool("b", 50)]);
+        let health = crate::health::HealthRegistry::new();
+
+        let picks: Vec<String> = {
+            let mut v = vec![];
+            for _ in 0..4 {
+                v.push(
+                    lb.next_healthy(&health, &["a".to_string()])
+                        .await
+                        .unwrap()
+                        .addr
+                        .clone(),
+                );
+            }
+            v
+        };
+        assert!(
+            picks.iter().all(|p| p == "b"),
+            "expected only b, got {:?}",
+            picks
+        );
+    }
+
+    #[tokio::test]
+    async fn next_healthy_fails_open_when_all_excluded() {
+        let lb = LoadBalancer::new(vec![pool("a", 100)]);
+        let health = crate::health::HealthRegistry::new();
+        // Only upstream is excluded (already tried) but must still be
+        // returned rather than yielding None.
+        let result = lb.next_healthy(&health, &["a".to_string()]).await;
+        assert_eq!(result.unwrap().addr, "a");
     }
 }

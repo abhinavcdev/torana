@@ -29,6 +29,13 @@ pub struct ListenerConfig {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct RouteConfig {
     pub name: String,
+    /// Exact hostname match against the request's Host header (port
+    /// stripped). A leading "*." matches that domain and all subdomains.
+    /// `None` matches any host.
+    pub host: Option<String>,
+    /// Path prefix match, on segment boundaries ("/api" matches "/api" and
+    /// "/api/v1" but not "/apiary"). `None` matches any path.
+    pub path: Option<String>,
     pub when: Option<String>, // CEL expression (not implemented yet)
     pub upstream: Vec<UpstreamConfig>,
     pub mirror: Option<MirrorConfig>,
@@ -36,6 +43,15 @@ pub struct RouteConfig {
     pub timeout: TimeoutConfig,
     #[serde(default)]
     pub headers: HeaderConfig,
+    pub health_check: Option<HealthCheckConfig>,
+    /// Max total attempts (including the first) across different upstreams
+    /// when a connection to an upstream fails outright. Never retries once
+    /// a request has been sent. Defaults to 2 when the route has more than
+    /// one upstream, 1 otherwise.
+    pub retries: Option<u32>,
+    /// Path to a sandboxed WASM request filter, evaluated before proxying.
+    /// Requires building with `--features plugins`.
+    pub plugin: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -71,6 +87,34 @@ pub struct HeaderConfig {
     pub response: Option<HashMap<String, String>>,
 }
 
+/// Active health check for a route's upstreams. Absent means every upstream
+/// is always considered healthy (today's behavior).
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct HealthCheckConfig {
+    /// HTTP path probed on each upstream. Default "/".
+    pub path: Option<String>,
+    /// How often to probe. Default "10s".
+    pub interval: Option<String>,
+    /// Per-probe timeout. Default "2s".
+    pub timeout: Option<String>,
+}
+
+impl HealthCheckConfig {
+    pub fn path(&self) -> &str {
+        self.path.as_deref().unwrap_or("/")
+    }
+    pub fn interval_duration(&self) -> anyhow::Result<Duration> {
+        self.interval
+            .as_deref()
+            .map_or(Ok(Duration::from_secs(10)), parse_duration)
+    }
+    pub fn timeout_duration(&self) -> anyhow::Result<Duration> {
+        self.timeout
+            .as_deref()
+            .map_or(Ok(Duration::from_secs(2)), parse_duration)
+    }
+}
+
 pub fn load_config(path: &str) -> anyhow::Result<Config> {
     let content = std::fs::read_to_string(path)
         .map_err(|e| anyhow::anyhow!("Failed to read config file {}: {}", path, e))?;
@@ -93,6 +137,17 @@ pub fn parse_duration(s: &str) -> anyhow::Result<Duration> {
         "s" => Ok(Duration::from_secs(value)),
         "m" => Ok(Duration::from_secs(value * 60)),
         _ => anyhow::bail!("Unknown duration unit '{}' in '{}'", unit, s),
+    }
+}
+
+impl RouteConfig {
+    /// Max total attempts across upstreams for this route.
+    pub fn max_attempts(&self) -> u32 {
+        match self.retries {
+            Some(n) => n.max(1),
+            None if self.upstream.len() > 1 => 2,
+            None => 1,
+        }
     }
 }
 
@@ -135,18 +190,18 @@ impl Config {
             }
         }
 
-        if self.route.len() > 1 {
-            tracing::warn!(
-                "{} routes configured but request matching is not implemented yet; \
-                 only the first route '{}' will receive traffic",
-                self.route.len(),
-                self.route[0].name
-            );
-        }
-
         for route in &self.route {
             if route.upstream.is_empty() {
                 anyhow::bail!("Route '{}' has no upstreams", route.name);
+            }
+            if let Some(path) = &route.path {
+                if !path.starts_with('/') {
+                    anyhow::bail!(
+                        "Route '{}': path '{}' must start with '/'",
+                        route.name,
+                        path
+                    );
+                }
             }
             for upstream in &route.upstream {
                 if upstream.addr.starts_with("https://") {
@@ -170,6 +225,34 @@ impl Config {
                 parse_duration(total).map_err(|e| {
                     anyhow::anyhow!("Route '{}': invalid timeout.total: {}", route.name, e)
                 })?;
+            }
+            if let Some(hc) = &route.health_check {
+                hc.interval_duration().map_err(|e| {
+                    anyhow::anyhow!(
+                        "Route '{}': invalid health_check.interval: {}",
+                        route.name,
+                        e
+                    )
+                })?;
+                hc.timeout_duration().map_err(|e| {
+                    anyhow::anyhow!(
+                        "Route '{}': invalid health_check.timeout: {}",
+                        route.name,
+                        e
+                    )
+                })?;
+            }
+            if let Some(n) = route.retries {
+                if n == 0 {
+                    anyhow::bail!("Route '{}': retries must be at least 1", route.name);
+                }
+            }
+            if route.plugin.is_some() && cfg!(not(feature = "plugins")) {
+                anyhow::bail!(
+                    "Route '{}': plugin is set but this build was compiled without \
+                     --features plugins",
+                    route.name
+                );
             }
             if route.when.is_some() {
                 tracing::warn!(
@@ -250,6 +333,33 @@ mod tests {
         let mut config = minimal_config("http://127.0.0.1:9000");
         config.listener[0].protocol = "quic".into();
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_path_without_leading_slash() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.route[0].path = Some("api".into());
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_zero_retries() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.route[0].retries = Some(0);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn max_attempts_defaults() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        assert_eq!(config.route[0].max_attempts(), 1);
+        config.route[0].upstream.push(UpstreamConfig {
+            addr: "http://127.0.0.1:9001".into(),
+            weight: None,
+        });
+        assert_eq!(config.route[0].max_attempts(), 2);
+        config.route[0].retries = Some(5);
+        assert_eq!(config.route[0].max_attempts(), 5);
     }
 
     #[test]

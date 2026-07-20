@@ -1,3 +1,6 @@
+use bytes::Bytes;
+use http_body_util::combinators::BoxBody;
+use http_body_util::{BodyExt, Empty};
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::{Request, Response};
 use hyper_util::client::legacy::{connect::HttpConnector, Client};
@@ -17,9 +20,14 @@ const HOP_BY_HOP_HEADERS: [&str; 8] = [
     "upgrade",
 ];
 
+/// Request body type sent to upstreams. Boxed so both the original
+/// streaming client body and a freshly-built empty body (used to retry
+/// GET/HEAD/OPTIONS requests on a different upstream) share one type.
+pub type UpstreamBody = BoxBody<Bytes, hyper::Error>;
+
 /// Shared upstream client with a keep-alive connection pool (keyed by
 /// host:port). Cloning is cheap; all clones share one pool.
-pub type UpstreamClient = Client<HttpConnector, hyper::body::Incoming>;
+pub type UpstreamClient = Client<HttpConnector, UpstreamBody>;
 
 pub fn build_upstream_client() -> UpstreamClient {
     let mut connector = HttpConnector::new();
@@ -32,8 +40,24 @@ pub fn build_upstream_client() -> UpstreamClient {
         .build(connector)
 }
 
+/// An empty request body, cheap to construct fresh for every retry attempt.
+pub fn empty_body() -> UpstreamBody {
+    Empty::<Bytes>::new()
+        .map_err(|never| match never {})
+        .boxed()
+}
+
+/// True if `err` (as returned by `proxy_request`) failed before any bytes
+/// reached the upstream — i.e. it is safe to retry on a different upstream
+/// without risking a non-idempotent request being applied twice.
+pub fn is_retryable(err: &anyhow::Error) -> bool {
+    err.downcast_ref::<hyper_util::client::legacy::Error>()
+        .map(|e| e.is_connect())
+        .unwrap_or(false)
+}
+
 pub async fn proxy_request(
-    mut req: Request<hyper::body::Incoming>,
+    mut req: Request<UpstreamBody>,
     upstream: &str,
     client_addr: SocketAddr,
     client_proto: &'static str,

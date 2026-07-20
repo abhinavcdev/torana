@@ -1,36 +1,13 @@
-[package]
-name = "torana"
-version = "0.3.0"
+[workspace]
+resolver = "2"
+members = ["torana-core", "torana"]
+
+[workspace.package]
+version = "0.4.0"
 edition = "2021"
 rust-version = "1.75"
-description = "Tiny Rust-native reverse proxy for edge, sidecar, and embedded use"
 license = "MIT OR Apache-2.0"
 repository = "https://github.com/abhinavcdev/torana"
-readme = "README.md"
-keywords = ["proxy", "reverse-proxy", "http", "load-balancer", "rustls"]
-categories = ["network-programming", "web-programming::http-server"]
-
-[dependencies]
-tokio = { version = "1.40", features = ["full"] }
-hyper = { version = "1.4", features = ["full"] }
-hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
-http-body-util = "0.1"
-bytes = "1.5"
-rustls = { version = "0.23", features = ["std", "ring"] }
-rustls-pemfile = "2.1"
-tokio-rustls = "0.25"
-serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
-tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-prometheus = "0.13"
-clap = { version = "4.5", features = ["derive"] }
-thiserror = "1.0"
-anyhow = "1.0"
-
-[dev-dependencies]
-reqwest = { version = "0.11", features = ["blocking", "rustls-tls"] }
-rcgen = "0.13"
 
 [profile.release]
 lto = true

@@ -29,7 +29,7 @@ jobs:
       - name: Install musl tools
         if: contains(matrix.target, 'musl')
         run: sudo apt-get update && sudo apt-get install -y musl-tools
-      - run: cargo build --release --target ${{ matrix.target }}
+      - run: cargo build --release -p torana --target ${{ matrix.target }}
       - name: Package
         run: |
           cd target/${{ matrix.target }}/release
