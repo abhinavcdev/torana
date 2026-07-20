@@ -1,12 +1,15 @@
-# caddyrs
+# torana
 
 A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. Single static binary (~4 MB), millisecond startup, pure-Rust TLS via [rustls](https://github.com/rustls/rustls) — no OpenSSL, no runtime dependencies.
 
-> **Status: early stage (v0.1).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.
+*torana* (तोरण) is the Indian ceremonial gateway arch — a small, sturdy structure everything passes through.
+
+> **Status: early stage (v0.2).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.
 
 ## What it does
 
 - **HTTP/1.1 reverse proxying** with streaming request/response bodies (no buffering)
+- **Upstream connection pooling** — keep-alive connections are reused across requests (90s idle timeout, up to 128 idle per upstream)
 - **TLS termination** with rustls
 - **Weighted round-robin load balancing** across multiple upstreams
 - **Zero-downtime config reload** via `SIGHUP` — validated before swap, upstream changes apply immediately
@@ -18,18 +21,17 @@ A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. 
 
 ## What it doesn't do (yet)
 
-Planned but **not implemented** — the config schema reserves fields for some of these, and caddyrs will warn if you set them:
+Planned but **not implemented** — the config schema reserves fields for some of these, and torana will warn if you set them:
 
 - HTTP/2 and HTTP/3
 - Request matching / multiple routes (all traffic currently goes to the first route)
 - TLS to upstreams (`https://` upstream addresses are rejected)
-- Connection pooling to upstreams (a new connection is opened per request)
 - Retries, circuit breaking, active health checks
 - Header rewriting, traffic mirroring, mTLS (`tls_client_ca`)
 - Automatic HTTPS / ACME — if you want certificates managed for you, use [Caddy](https://caddyserver.com)
 - Connection draining on shutdown
 
-If you need these today, use Caddy, nginx, or Envoy. caddyrs trades features for a small, auditable, dependency-free binary.
+If you need these today, use Caddy, nginx, or Envoy. torana trades features for a small, auditable, dependency-free binary.
 
 ## Quick start
 
@@ -38,7 +40,7 @@ If you need these today, use Caddy, nginx, or Envoy. caddyrs trades features for
 cargo build --release
 
 # Minimal config
-cat > caddy.rs.toml <<'EOF'
+cat > torana.toml <<'EOF'
 [global]
 log_level = "info"
 metrics_addr = "127.0.0.1:9090"
@@ -55,10 +57,10 @@ upstream = [
 EOF
 
 # Run
-./target/release/caddyrs --config caddy.rs.toml
+./target/release/torana --config torana.toml
 
 # Reload config without dropping the listener
-kill -HUP $(pgrep caddyrs)
+kill -HUP $(pgrep torana)
 ```
 
 For HTTPS termination, add a listener with a certificate (generate a self-signed test pair with `scripts/setup.sh`):
@@ -118,11 +120,11 @@ Integration tests spawn real proxy processes against in-process backends on rand
 
 - [Local benchmarking guide](docs/TESTING.md) — side-by-side comparison scripts against Caddy
 - [Scripts overview](docs/SCRIPTS_OVERVIEW.md)
-- [v0.1 design notes](docs/plans/2026-04-11-caddyrs-v0.1-implementation.md)
+- [v0.1 design notes](docs/plans/2026-04-11-torana-v0.1-implementation.md)
 
 ## Relationship to Caddy
 
-caddyrs is **not** affiliated with or a replacement for [Caddy](https://caddyserver.com). Caddy is a mature, batteries-included web server with automatic HTTPS and a large plugin ecosystem. caddyrs explores a different corner of the design space: the smallest useful reverse proxy for containers and edge nodes, where a ~4 MB static binary and fast cold start matter more than features.
+torana is **not** affiliated with or a replacement for [Caddy](https://caddyserver.com). Caddy is a mature, batteries-included web server with automatic HTTPS and a large plugin ecosystem. torana explores a different corner of the design space: the smallest useful reverse proxy for containers and edge nodes, where a ~4 MB static binary and fast cold start matter more than features.
 
 ## License
 

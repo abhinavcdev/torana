@@ -1,7 +1,7 @@
 #!/bin/bash
 
 ##########################################################################
-# Test: Metrics Endpoint (caddy.rs only)
+# Test: Metrics Endpoint (torana only)
 #
 # Tests the Prometheus metrics endpoint
 # Verifies metrics are exported in correct format
@@ -14,7 +14,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 LOGS_DIR="$PROJECT_ROOT/logs"
 RESULTS_DIR="$PROJECT_ROOT/test-results"
 
-CADDYRS_BIN="$PROJECT_ROOT/target/release/caddyrs"
+CADDYRS_BIN="$PROJECT_ROOT/target/release/torana"
 
 mkdir -p "$LOGS_DIR" "$RESULTS_DIR"
 
@@ -29,7 +29,7 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}Test: Metrics Endpoint${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
-echo -e "${YELLOW}Note: caddy.rs feature (Prometheus metrics)${NC}"
+echo -e "${YELLOW}Note: torana feature (Prometheus metrics)${NC}"
 echo ""
 
 # Check prerequisites
@@ -45,20 +45,20 @@ if ! lsof -i :9999 > /dev/null 2>&1; then
 fi
 
 # Kill any existing instances
-pkill -f "caddyrs.*--config" 2>/dev/null || true
+pkill -f "torana.*--config" 2>/dev/null || true
 sleep 1
 
-echo -e "${YELLOW}Testing caddy.rs metrics endpoint...${NC}"
+echo -e "${YELLOW}Testing torana metrics endpoint...${NC}"
 echo ""
 
-# Start caddy.rs
-"$CADDYRS_BIN" --config "$PROJECT_ROOT/caddy.rs.toml" \
-    > "$LOGS_DIR/caddyrs-metrics.log" 2>&1 &
+# Start torana
+"$CADDYRS_BIN" --config "$PROJECT_ROOT/torana.toml" \
+    > "$LOGS_DIR/torana-metrics.log" 2>&1 &
 CADDYRS_PID=$!
 sleep 2
 
 if ! kill -0 $CADDYRS_PID 2>/dev/null; then
-    echo -e "${RED}✗ Failed to start caddy.rs${NC}"
+    echo -e "${RED}✗ Failed to start torana${NC}"
     exit 1
 fi
 
@@ -152,7 +152,7 @@ cat > "$RESULTS_DIR/metrics-summary.txt" << EOF
 Metrics Endpoint Test Results
 =============================
 
-Feature: Prometheus Metrics Endpoint (caddy.rs)
+Feature: Prometheus Metrics Endpoint (torana)
 
 Endpoint: http://localhost:9090/metrics
 Format: Prometheus text format
@@ -164,7 +164,7 @@ Available Metrics:
 - upstream_connection_errors: Count of upstream connection failures
 
 Test Scenario:
-1. Start caddy.rs proxy
+1. Start torana proxy
 2. Query metrics endpoint
 3. Verify metrics are present and properly formatted
 4. Send requests and verify counters increment
@@ -185,7 +185,7 @@ Integration Options:
 
 Test Date: $(date)
 
-Benefits of caddy.rs metrics:
+Benefits of torana metrics:
 - Out-of-the-box Prometheus integration
 - No additional sidecar needed
 - Native format (no conversion required)

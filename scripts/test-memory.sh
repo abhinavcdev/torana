@@ -15,7 +15,7 @@ TOOLS_DIR="$PROJECT_ROOT/tools"
 LOGS_DIR="$PROJECT_ROOT/logs"
 RESULTS_DIR="$PROJECT_ROOT/test-results"
 
-CADDYRS_BIN="$PROJECT_ROOT/target/release/caddyrs"
+CADDYRS_BIN="$PROJECT_ROOT/target/release/torana"
 CADDY_BIN="$TOOLS_DIR/caddy"
 
 mkdir -p "$LOGS_DIR" "$RESULTS_DIR"
@@ -45,7 +45,7 @@ if ! lsof -i :9999 > /dev/null 2>&1; then
 fi
 
 # Kill any existing instances
-pkill -f "caddyrs.*--config" 2>/dev/null || true
+pkill -f "torana.*--config" 2>/dev/null || true
 pkill -f "caddy.*run.*--config" 2>/dev/null || true
 sleep 1
 
@@ -73,17 +73,17 @@ get_memory_mb() {
     fi
 }
 
-echo -e "${YELLOW}Testing caddy.rs...${NC}"
+echo -e "${YELLOW}Testing torana...${NC}"
 echo ""
 
-# Start caddy.rs
-"$CADDYRS_BIN" --config "$PROJECT_ROOT/caddy.rs.toml" \
-    > "$LOGS_DIR/caddyrs-memory.log" 2>&1 &
+# Start torana
+"$CADDYRS_BIN" --config "$PROJECT_ROOT/torana.toml" \
+    > "$LOGS_DIR/torana-memory.log" 2>&1 &
 CADDYRS_PID=$!
 sleep 2
 
 if ! kill -0 $CADDYRS_PID 2>/dev/null; then
-    echo -e "${RED}✗ Failed to start caddy.rs${NC}"
+    echo -e "${RED}✗ Failed to start torana${NC}"
     exit 1
 fi
 
@@ -193,7 +193,7 @@ Test Configuration:
 - Load: 1000 requests, 100 concurrent
 - Load duration: ~8 seconds
 
-caddy.rs Memory:
+torana Memory:
 - Idle (5s after startup): $CADDYRS_IDLE MB
 - Peak under load: $CADDYRS_PEAK MB
 - Detailed samples: $CADDYRS_LOAD_RESULTS
@@ -218,7 +218,7 @@ EOF
 
 echo -e "${GREEN}✓ Results saved:${NC}"
 echo "  - $RESULTS_DIR/memory-summary.txt"
-echo "  - $CADDYRS_LOAD_RESULTS (caddy.rs samples)"
+echo "  - $CADDYRS_LOAD_RESULTS (torana samples)"
 echo "  - $CADDY_LOAD_RESULTS (Caddy samples)"
 echo ""
 echo -e "${BLUE}========================================${NC}"

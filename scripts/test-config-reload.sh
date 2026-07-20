@@ -1,10 +1,10 @@
 #!/bin/bash
 
 ##########################################################################
-# Test: Zero-Downtime Config Reload (caddy.rs only)
+# Test: Zero-Downtime Config Reload (torana only)
 #
 # Tests SIGHUP-based config reload without dropping requests
-# This is a caddy.rs-specific feature
+# This is a torana-specific feature
 ##########################################################################
 
 set -e
@@ -14,7 +14,7 @@ PROJECT_ROOT="$(dirname "$SCRIPT_DIR")"
 LOGS_DIR="$PROJECT_ROOT/logs"
 RESULTS_DIR="$PROJECT_ROOT/test-results"
 
-CADDYRS_BIN="$PROJECT_ROOT/target/release/caddyrs"
+CADDYRS_BIN="$PROJECT_ROOT/target/release/torana"
 
 mkdir -p "$LOGS_DIR" "$RESULTS_DIR"
 
@@ -29,7 +29,7 @@ echo -e "${BLUE}========================================${NC}"
 echo -e "${BLUE}Test: Zero-Downtime Config Reload${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
-echo -e "${YELLOW}Note: caddy.rs feature (SIGHUP reload)${NC}"
+echo -e "${YELLOW}Note: torana feature (SIGHUP reload)${NC}"
 echo ""
 
 # Check prerequisites
@@ -45,11 +45,11 @@ if ! lsof -i :9999 > /dev/null 2>&1; then
 fi
 
 # Kill any existing instances
-pkill -f "caddyrs.*--config" 2>/dev/null || true
+pkill -f "torana.*--config" 2>/dev/null || true
 sleep 1
 
 # Create initial config
-cat > "$PROJECT_ROOT/caddy.rs.toml" << 'EOF'
+cat > "$PROJECT_ROOT/torana.toml" << 'EOF'
 [global]
 workers = "auto"
 log_format = "json"
@@ -77,23 +77,23 @@ connect = "200ms"
 total = "30s"
 EOF
 
-echo -e "${YELLOW}Testing caddy.rs config reload...${NC}"
+echo -e "${YELLOW}Testing torana config reload...${NC}"
 echo ""
 
-# Start caddy.rs
-"$CADDYRS_BIN" --config "$PROJECT_ROOT/caddy.rs.toml" \
-    > "$LOGS_DIR/caddyrs-reload.log" 2>&1 &
+# Start torana
+"$CADDYRS_BIN" --config "$PROJECT_ROOT/torana.toml" \
+    > "$LOGS_DIR/torana-reload.log" 2>&1 &
 CADDYRS_PID=$!
 sleep 2
 
 if ! kill -0 $CADDYRS_PID 2>/dev/null; then
-    echo -e "${RED}✗ Failed to start caddy.rs${NC}"
+    echo -e "${RED}✗ Failed to start torana${NC}"
     exit 1
 fi
 
 echo "  Initial state:"
-echo "    - caddy.rs running (PID: $CADDYRS_PID)"
-echo "    - Config: caddy.rs.toml with log_level=info"
+echo "    - torana running (PID: $CADDYRS_PID)"
+echo "    - Config: torana.toml with log_level=info"
 echo ""
 
 # Test initial requests
@@ -111,7 +111,7 @@ echo ""
 echo "  Modifying configuration (log_level: info -> debug)..."
 
 # Modify config
-sed -i '' 's/log_level = "info"/log_level = "debug"/' "$PROJECT_ROOT/caddy.rs.toml"
+sed -i '' 's/log_level = "info"/log_level = "debug"/' "$PROJECT_ROOT/torana.toml"
 
 echo "  Sending SIGHUP to reload configuration..."
 kill -HUP $CADDYRS_PID
@@ -136,7 +136,7 @@ done
 echo ""
 echo "  Checking logs for reload confirmation..."
 
-if grep -q "Config reloaded successfully" "$LOGS_DIR/caddyrs-reload.log"; then
+if grep -q "Config reloaded successfully" "$LOGS_DIR/torana-reload.log"; then
     echo -e "    ${GREEN}✓ Found 'Config reloaded successfully' in logs${NC}"
 else
     echo -e "    ${YELLOW}⚠ Reload message not found in logs${NC}"
@@ -147,7 +147,7 @@ echo ""
 echo "  Verifying new config is active..."
 
 # Modify again to verify changes take effect
-sed -i '' 's/log_level = "debug"/log_level = "warn"/' "$PROJECT_ROOT/caddy.rs.toml"
+sed -i '' 's/log_level = "debug"/log_level = "warn"/' "$PROJECT_ROOT/torana.toml"
 kill -HUP $CADDYRS_PID
 sleep 1
 
@@ -180,10 +180,10 @@ cat > "$RESULTS_DIR/config-reload-summary.txt" << EOF
 Config Reload Test Results
 ===========================
 
-Feature: Zero-Downtime Configuration Reload (caddy.rs SIGHUP)
+Feature: Zero-Downtime Configuration Reload (torana SIGHUP)
 
 Test Scenario:
-1. Start caddy.rs with initial configuration
+1. Start torana with initial configuration
 2. Send requests to verify operation
 3. Modify configuration file
 4. Send SIGHUP signal to reload
@@ -201,11 +201,11 @@ Key Findings:
 - New configuration becomes active immediately after reload
 - No need to restart the process or lose existing connections
 
-Logs: $LOGS_DIR/caddyrs-reload.log
+Logs: $LOGS_DIR/torana-reload.log
 
 Test Date: $(date)
 
-Note: This is a caddy.rs-specific feature. Caddy uses HTTP API for config
+Note: This is a torana-specific feature. Caddy uses HTTP API for config
 changes, which requires a different mechanism and introduces an attack surface.
 EOF
 

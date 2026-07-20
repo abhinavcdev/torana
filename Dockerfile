@@ -6,6 +6,6 @@ COPY src ./src
 RUN cargo build --release
 
 FROM scratch
-COPY --from=builder /app/target/release/caddyrs /caddyrs
-ENTRYPOINT ["/caddyrs"]
-CMD ["--config", "/etc/caddyrs/caddy.rs.toml"]
+COPY --from=builder /app/target/release/torana /torana
+ENTRYPOINT ["/torana"]
+CMD ["--config", "/etc/torana/torana.toml"]

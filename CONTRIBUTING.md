@@ -1,6 +1,6 @@
-# Contributing to caddyrs
+# Contributing to torana
 
-Thanks for your interest! caddyrs is early-stage, so there is plenty of high-impact work available — see the [roadmap section of the README](README.md#what-it-doesnt-do-yet).
+Thanks for your interest! torana is early-stage, so there is plenty of high-impact work available — see the [roadmap section of the README](README.md#what-it-doesnt-do-yet).
 
 ## Development setup
 

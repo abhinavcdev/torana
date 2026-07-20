@@ -1,12 +1,12 @@
-# caddy.rs Local Testing & Benchmarking Guide
+# torana Local Testing & Benchmarking Guide
 
-A practical guide for testing caddy.rs locally and comparing it against Caddy side-by-side.
+A practical guide for testing torana locally and comparing it against Caddy side-by-side.
 
 ## Quick Start (5 minutes)
 
 ```bash
-# 1. Clone and build caddy.rs
-git clone <repo> caddyrs && cd caddyrs
+# 1. Clone and build torana
+git clone <repo> torana && cd torana
 cargo build --release
 
 # 2. Download Caddy
@@ -17,9 +17,9 @@ chmod +x caddy
 python3 -m http.server 9999 > /tmp/backend.log 2>&1 &
 BACKEND_PID=$!
 
-# 4. Test caddy.rs
-./target/release/caddyrs --config caddy.rs.toml &
-CADDYRS_PID=$!
+# 4. Test torana
+./target/release/torana --config torana.toml &
+TORANA_PID=$!
 
 # 5. Test Caddy
 ./caddy run --config Caddyfile &
@@ -69,9 +69,9 @@ node app.js
 
 ## Configuration Files
 
-### caddy.rs Config
+### torana Config
 
-**caddy.rs.toml** (already in repo):
+**torana.toml** (already in repo):
 ```toml
 [global]
 workers = "auto"
@@ -127,8 +127,8 @@ total = "30s"
 echo "=== Testing HTTP Proxying ==="
 echo ""
 
-# caddy.rs
-echo "caddy.rs:"
+# torana
+echo "torana:"
 time curl -s http://localhost:80/ | head -1
 time curl -s http://localhost:80/ | head -1
 time curl -s http://localhost:80/ | head -1
@@ -144,7 +144,7 @@ time curl -s http://localhost:80/ | head -1
 **Apache Bench (Sequential):**
 
 ```bash
-# caddy.rs: 100 requests, single-threaded
+# torana: 100 requests, single-threaded
 ab -n 100 -c 1 http://localhost:80/
 
 # Caddy: 100 requests, single-threaded  
@@ -174,7 +174,7 @@ ab -n 10000 -c 100 http://localhost:80/
 ### 3. HTTPS/TLS Performance
 
 ```bash
-# caddy.rs (with self-signed cert)
+# torana (with self-signed cert)
 ab -n 100 -c 10 https://localhost:443/ -k
 
 # Caddy
@@ -188,21 +188,21 @@ ab -n 100 -c 10 https://localhost:443/ -k
 
 echo "=== Memory Usage ==="
 
-# Start caddy.rs
-cargo run --release --config caddy.rs.toml &
-CADDYRS_PID=$!
+# Start torana
+cargo run --release --config torana.toml &
+TORANA_PID=$!
 sleep 2
 
 # Measure idle memory
-ps -o rss= -p $CADDYRS_PID | awk '{print "caddy.rs idle: " $1/1024 " MB"}'
+ps -o rss= -p $TORANA_PID | awk '{print "torana idle: " $1/1024 " MB"}'
 
 # Run load
 ab -n 10000 -c 100 http://localhost:80/ &
 sleep 1
-ps -o rss= -p $CADDYRS_PID | awk '{print "caddy.rs under load: " $1/1024 " MB"}'
+ps -o rss= -p $TORANA_PID | awk '{print "torana under load: " $1/1024 " MB"}'
 wait
 
-kill $CADDYRS_PID
+kill $TORANA_PID
 
 # Repeat for Caddy
 echo ""
@@ -227,12 +227,12 @@ kill $CADDY_PID
 
 echo "=== Cold Startup Time ==="
 
-# caddy.rs
-/usr/bin/time -f "caddy.rs: %es" ./target/release/caddyrs --config caddy.rs.toml &
-CADDYRS_PID=$!
+# torana
+/usr/bin/time -f "torana: %es" ./target/release/torana --config torana.toml &
+TORANA_PID=$!
 sleep 1
-kill $CADDYRS_PID 2>/dev/null
-wait $CADDYRS_PID 2>/dev/null
+kill $TORANA_PID 2>/dev/null
+wait $TORANA_PID 2>/dev/null
 
 sleep 1
 
@@ -244,14 +244,14 @@ kill $CADDY_PID 2>/dev/null
 wait $CADDY_PID 2>/dev/null
 ```
 
-### 6. Configuration Reload (SIGHUP for caddy.rs)
+### 6. Configuration Reload (SIGHUP for torana)
 
 ```bash
 #!/bin/bash
 
-# Start caddy.rs
-cargo run --release --config caddy.rs.toml &
-CADDYRS_PID=$!
+# Start torana
+cargo run --release --config torana.toml &
+TORANA_PID=$!
 sleep 2
 
 # Start background load
@@ -261,19 +261,19 @@ LOAD_PID=$!
 # After 10 seconds, reload config
 sleep 10
 echo "Sending SIGHUP..."
-kill -HUP $CADDYRS_PID
+kill -HUP $TORANA_PID
 
 # Monitor logs for "Config reloaded successfully"
 # Requests should continue without interruption
 
 wait $LOAD_PID
-kill $CADDYRS_PID 2>/dev/null
+kill $TORANA_PID 2>/dev/null
 ```
 
 ### 7. Metrics Endpoint
 
 ```bash
-# caddy.rs metrics (Prometheus format)
+# torana metrics (Prometheus format)
 curl http://localhost:9090/metrics
 
 # Check counters:
@@ -297,18 +297,18 @@ curl http://localhost:9090/metrics
 
 ### Results Table
 
-| Metric | caddy.rs | Caddy | Winner |
+| Metric | torana | Caddy | Winner |
 |--------|----------|-------|--------|
-| **Binary Size** | 815 KB | 58 MB | caddy.rs 71x smaller |
-| **Idle Memory** | 8 MB | 72 MB | caddy.rs 9x lower |
-| **Cold Startup** | <5ms | ~400ms | caddy.rs 80x faster |
-| **Single Request** | 1.2ms | 1.8ms | caddy.rs 33% faster |
+| **Binary Size** | 815 KB | 58 MB | torana 71x smaller |
+| **Idle Memory** | 8 MB | 72 MB | torana 9x lower |
+| **Cold Startup** | <5ms | ~400ms | torana 80x faster |
+| **Single Request** | 1.2ms | 1.8ms | torana 33% faster |
 | **100 req/sec (10 concurrent)** | 98.5% OK | 99.2% OK | Caddy (negligible) |
 | **1000 req/sec (100 concurrent)** | 95.2% OK | 96.1% OK | Caddy (negligible) |
-| **TLS Handshake** | 12ms | 14ms | caddy.rs 14% faster |
-| **Memory under load (100 concurrent)** | 22 MB | 125 MB | caddy.rs 5.7x lower |
-| **Config Reload Time** | <100ms | ~1s | caddy.rs 10x faster |
-| **Shutdown Time** | <50ms | ~200ms | caddy.rs 4x faster |
+| **TLS Handshake** | 12ms | 14ms | torana 14% faster |
+| **Memory under load (100 concurrent)** | 22 MB | 125 MB | torana 5.7x lower |
+| **Config Reload Time** | <100ms | ~1s | torana 10x faster |
+| **Shutdown Time** | <50ms | ~200ms | torana 4x faster |
 
 ### Test Commands Used
 
@@ -333,12 +333,12 @@ watch -n 1 'ps aux | grep caddy'
 
 ## Detailed Comparison
 
-### 1. Resource Efficiency (Why caddy.rs wins)
+### 1. Resource Efficiency (Why torana wins)
 
 **Binary Size:**
 ```bash
-ls -lh target/release/caddyrs ./caddy
-# caddy.rs:  815 KB
+ls -lh target/release/torana ./caddy
+# torana:  815 KB
 # Caddy:     58 MB
 # Reason: rustls (no OpenSSL linking), minimal deps, aggressive optimization
 ```
@@ -346,9 +346,9 @@ ls -lh target/release/caddyrs ./caddy
 **Memory at Idle:**
 ```bash
 # Start each proxy, measure RSS after 5 seconds
-./target/release/caddyrs --config caddy.rs.toml &
+./target/release/torana --config torana.toml &
 sleep 5
-ps aux | grep caddyrs | grep -v grep | awk '{print "caddy.rs: " $6 " KB"}'
+ps aux | grep torana | grep -v grep | awk '{print "torana: " $6 " KB"}'
 
 ./caddy run --config Caddyfile &
 sleep 5
@@ -358,9 +358,9 @@ ps aux | grep caddy | grep -v grep | awk '{print "Caddy: " $6 " KB"}'
 **Startup Time:**
 ```bash
 # Measure time to first request
-time (./target/release/caddyrs --config caddy.rs.toml & sleep 0.1 && \
+time (./target/release/torana --config torana.toml & sleep 0.1 && \
       curl -s http://localhost:80/ > /dev/null && \
-      pkill caddyrs)
+      pkill torana)
 
 time (./caddy run --config Caddyfile & sleep 0.5 && \
       curl -s http://localhost:80/ > /dev/null && \
@@ -372,7 +372,7 @@ time (./caddy run --config Caddyfile & sleep 0.5 && \
 Both proxies handle 10,000 requests/sec efficiently:
 
 ```bash
-# caddy.rs throughput
+# torana throughput
 ab -n 10000 -c 100 http://localhost:80/ 2>&1 | grep "Requests per second"
 
 # Caddy throughput
@@ -382,17 +382,17 @@ ab -n 10000 -c 100 http://localhost:80/ 2>&1 | grep "Requests per second"
 
 ### 3. Features Comparison
 
-| Feature | caddy.rs | Caddy | Notes |
+| Feature | torana | Caddy | Notes |
 |---------|----------|-------|-------|
 | HTTP/1.1 + H2 | ✅ | ✅ | Both excellent |
-| HTTPS/TLS | ✅ rustls | ✅ OpenSSL | caddy.rs: no C FFI |
+| HTTPS/TLS | ✅ rustls | ✅ OpenSSL | torana: no C FFI |
 | Auto-HTTPS/ACME | ❌ | ✅ | Caddy advantage |
 | Reverse Proxy | ✅ | ✅ | Both excellent |
-| Load Balancing | ✅ weighted round-robin | ✅ | caddy.rs: simpler |
-| Config Reload | ✅ SIGHUP | ✅ HTTP API | caddy.rs: safer (no HTTP surface) |
-| Metrics | ✅ Prometheus | ❌ | caddy.rs advantage |
-| Plugins | ✅ WASM | ✅ Go modules | caddy.rs: sandboxed, safer |
-| Circuit Breaker | ✅ | ❌ | caddy.rs advantage |
+| Load Balancing | ✅ weighted round-robin | ✅ | torana: simpler |
+| Config Reload | ✅ SIGHUP | ✅ HTTP API | torana: safer (no HTTP surface) |
+| Metrics | ✅ Prometheus | ❌ | torana advantage |
+| Plugins | ✅ WASM | ✅ Go modules | torana: sandboxed, safer |
+| Circuit Breaker | ✅ | ❌ | torana advantage |
 | Admin API | ❌ | ✅ | Caddy advantage (also security risk) |
 
 ---
@@ -405,7 +405,7 @@ ab -n 10000 -c 100 http://localhost:80/ 2>&1 | grep "Requests per second"
 #!/bin/bash
 
 # Update config with 2 backends
-cat > caddy.rs.toml << 'EOF'
+cat > torana.toml << 'EOF'
 [[route]]
 upstream = [
   { addr = "http://localhost:9999", weight = 50 },
@@ -419,9 +419,9 @@ python3 -m http.server 10000 > /tmp/backend2.log 2>&1 &
 
 sleep 1
 
-# Start caddy.rs
-cargo run --release --config caddy.rs.toml &
-CADDYRS_PID=$!
+# Start torana
+cargo run --release --config torana.toml &
+TORANA_PID=$!
 sleep 2
 
 # Send 20 requests
@@ -433,7 +433,7 @@ done
 echo "Backend 1 requests: $(grep -c 'GET / HTTP' /tmp/backend1.log)"
 echo "Backend 2 requests: $(grep -c 'GET / HTTP' /tmp/backend2.log)"
 
-kill $CADDYRS_PID
+kill $TORANA_PID
 ```
 
 ### Test 2: Error Recovery
@@ -442,8 +442,8 @@ kill $CADDYRS_PID
 #!/bin/bash
 
 # Start proxy
-cargo run --release --config caddy.rs.toml &
-CADDYRS_PID=$!
+cargo run --release --config torana.toml &
+TORANA_PID=$!
 sleep 2
 
 # Start backend
@@ -468,7 +468,7 @@ sleep 1
 # Send requests (should succeed again)
 curl -i http://localhost:80/ 2>&1 | grep HTTP
 
-kill $CADDYRS_PID
+kill $TORANA_PID
 ```
 
 ### Test 3: Configuration Reload Without Downtime
@@ -476,9 +476,9 @@ kill $CADDYRS_PID
 ```bash
 #!/bin/bash
 
-# Start caddy.rs
-cargo run --release --config caddy.rs.toml &
-CADDYRS_PID=$!
+# Start torana
+cargo run --release --config torana.toml &
+TORANA_PID=$!
 sleep 2
 
 # Start sustained load in background
@@ -490,7 +490,7 @@ sleep 10
 
 # Reload config (change log level)
 echo "Reloading config..."
-kill -HUP $CADDYRS_PID
+kill -HUP $TORANA_PID
 
 # Wait for completion
 wait $WRK_PID
@@ -499,14 +499,14 @@ wait $WRK_PID
 echo "Total requests: $(grep 'requests' /tmp/wrk.log)"
 echo "Failed requests: $(grep 'Non-2xx' /tmp/wrk.log)"
 
-kill $CADDYRS_PID 2>/dev/null
+kill $TORANA_PID 2>/dev/null
 ```
 
 ---
 
 ## Metrics Collection & Analysis
 
-### Prometheus Metrics from caddy.rs
+### Prometheus Metrics from torana
 
 ```bash
 # Get all metrics
@@ -538,16 +538,16 @@ done
 Build minimal Docker images to compare:
 
 ```dockerfile
-# Dockerfile.caddyrs
+# Dockerfile.torana
 FROM scratch
-COPY target/release/caddyrs /caddyrs
+COPY target/release/torana /torana
 COPY certs/ /certs
-COPY caddy.rs.toml /
-ENTRYPOINT ["/caddyrs"]
+COPY torana.toml /
+ENTRYPOINT ["/torana"]
 
 # Build and measure
-docker build -f Dockerfile.caddyrs -t caddyrs:v0.1 .
-docker image ls | grep caddyrs
+docker build -f Dockerfile.torana -t torana:v0.1 .
+docker image ls | grep torana
 # Expected: ~3 MB
 
 # Compare with Caddy
@@ -560,7 +560,7 @@ docker image ls caddy
 
 ## Summary: When to Use What
 
-### Use **caddy.rs** when:
+### Use **torana** when:
 - ✅ Binary size matters (sidecars, edge, IoT)
 - ✅ Memory is constrained (<100 MB baseline)
 - ✅ Fast startup needed (serverless, spot instances)
@@ -588,12 +588,12 @@ kill -9 <PID>
 
 **Config errors:**
 ```bash
-cargo run -- --config caddy.rs.toml 2>&1
+cargo run -- --config torana.toml 2>&1
 ```
 
 **Memory leaks (sustained load):**
 ```bash
-watch -n 1 'ps aux | grep caddyrs | head -1'
+watch -n 1 'ps aux | grep torana | head -1'
 ```
 
 **TLS certificate errors:**
@@ -609,7 +609,7 @@ openssl req -x509 -newkey rsa:4096 -keyout certs/tls.key -out certs/tls.crt -day
 1. **Run the benchmarks** in your environment
 2. **Compare results** with this guide
 3. **Report discrepancies** (different hardware may vary)
-4. **Use caddy.rs** if metrics align with your needs
+4. **Use torana** if metrics align with your needs
 5. **File issues** if you find problems
 
 Happy testing! 🚀

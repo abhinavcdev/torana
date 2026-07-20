@@ -4,7 +4,7 @@
 # Start Test Application (Backend Server)
 #
 # Starts a Python HTTP server on port 9999 that serves as the upstream
-# backend for both caddy.rs and Caddy to proxy to
+# backend for both torana and Caddy to proxy to
 ##########################################################################
 
 set -e

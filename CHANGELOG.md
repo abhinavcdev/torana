@@ -6,6 +6,20 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-20
+
+### Changed
+
+- **Project renamed from caddyrs to torana.** The binary, default config
+  file (`torana.toml`), and Docker paths all use the new name.
+
+### Added
+
+- **Upstream connection pooling**: keep-alive connections to upstreams are
+  now reused across requests (hyper-util pooled client; 90s idle timeout,
+  up to 128 idle connections per upstream). Previously every request opened
+  a fresh TCP connection.
+
 ## [0.1.0] - 2026-07-19
 
 Initial public release.

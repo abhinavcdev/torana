@@ -1,6 +1,6 @@
 # Security Policy
 
-caddyrs is a network-facing proxy, so security reports are taken seriously.
+torana is a network-facing proxy, so security reports are taken seriously.
 
 ## Supported versions
 

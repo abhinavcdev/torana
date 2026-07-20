@@ -1,6 +1,9 @@
 use hyper::header::{HeaderMap, HeaderName, HeaderValue};
 use hyper::{Request, Response};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use hyper_util::rt::TokioExecutor;
 use std::net::SocketAddr;
+use std::time::Duration;
 
 /// Headers that must not be forwarded by a proxy (RFC 9110 §7.6.1).
 const HOP_BY_HOP_HEADERS: [&str; 8] = [
@@ -14,22 +17,34 @@ const HOP_BY_HOP_HEADERS: [&str; 8] = [
     "upgrade",
 ];
 
+/// Shared upstream client with a keep-alive connection pool (keyed by
+/// host:port). Cloning is cheap; all clones share one pool.
+pub type UpstreamClient = Client<HttpConnector, hyper::body::Incoming>;
+
+pub fn build_upstream_client() -> UpstreamClient {
+    Client::builder(TokioExecutor::new())
+        .pool_idle_timeout(Duration::from_secs(90))
+        .pool_max_idle_per_host(128)
+        .build_http()
+}
+
 pub async fn proxy_request(
     mut req: Request<hyper::body::Incoming>,
     upstream: &str,
     client_addr: SocketAddr,
     client_proto: &'static str,
+    client: &UpstreamClient,
 ) -> anyhow::Result<Response<hyper::body::Incoming>> {
-    // For HTTP/1.1 upstream requests the request line uses a relative URI.
     let path_and_query = req
         .uri()
         .path_and_query()
         .map(|pq| pq.as_str())
-        .unwrap_or("/")
-        .to_string();
-    *req.uri_mut() = path_and_query.parse::<hyper::Uri>()?;
-
+        .unwrap_or("/");
     let (host, port) = upstream_host_port(upstream)?;
+
+    // The pooled client routes by absolute URI authority.
+    let uri = format!("http://{}:{}{}", host, port, path_and_query).parse::<hyper::Uri>()?;
+    *req.uri_mut() = uri;
 
     strip_hop_by_hop(req.headers_mut());
     req.headers_mut().insert(
@@ -38,20 +53,7 @@ pub async fn proxy_request(
     );
     append_forwarded_headers(req.headers_mut(), client_addr, client_proto);
 
-    let stream = tokio::net::TcpStream::connect((host.as_str(), port)).await?;
-    let io = hyper_util::rt::TokioIo::new(stream);
-
-    let (mut sender, conn) = hyper::client::conn::http1::Builder::new()
-        .handshake(io)
-        .await?;
-
-    tokio::spawn(async move {
-        if let Err(e) = conn.await {
-            tracing::debug!("Upstream connection closed with error: {}", e);
-        }
-    });
-
-    let mut response = sender.send_request(req).await?;
+    let mut response = client.request(req).await?;
     strip_hop_by_hop(response.headers_mut());
 
     tracing::debug!(status = %response.status(), upstream, "Upstream responded");

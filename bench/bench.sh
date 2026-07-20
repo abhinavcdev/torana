@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Benchmark caddyrs against Caddy and nginx in Docker.
+# Benchmark torana against Caddy and nginx in Docker.
 #
 #   ./bench/bench.sh              # 15s per target, 64 connections
 #   DURATION=30s CONNS=128 ./bench/bench.sh
@@ -13,9 +13,9 @@ cd "$(dirname "$0")"
 
 DURATION="${DURATION:-15s}"
 CONNS="${CONNS:-64}"
-TARGETS=(caddyrs caddy nginx-proxy)
+TARGETS=(torana caddy nginx-proxy)
 
-echo "==> Building and starting proxies (first caddyrs build takes a few minutes)"
+echo "==> Building and starting proxies (first torana build takes a few minutes)"
 docker compose up -d --build backend "${TARGETS[@]}"
 
 echo "==> Waiting for proxies to answer"

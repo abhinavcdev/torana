@@ -21,7 +21,7 @@ NC='\033[0m'
 echo -e "${BLUE}"
 echo "╔════════════════════════════════════════════════════╗"
 echo "║                                                    ║"
-echo "║         caddy.rs vs Caddy Testing Suite           ║"
+echo "║         torana vs Caddy Testing Suite           ║"
 echo "║                                                    ║"
 echo "║     Complete Benchmarking and Comparison          ║"
 echo "║                                                    ║"
@@ -63,7 +63,7 @@ echo ""
 cleanup() {
     echo ""
     echo -e "${YELLOW}Cleaning up...${NC}"
-    pkill -f "caddyrs.*--config" 2>/dev/null || true
+    pkill -f "torana.*--config" 2>/dev/null || true
     pkill -f "caddy.*run.*--config" 2>/dev/null || true
     pkill -f "http.server" 2>/dev/null || true
     kill $APP_PID 2>/dev/null || true
@@ -84,8 +84,8 @@ TESTS=(
     "test-https.sh:HTTPS/TLS Performance"
     "test-memory.sh:Memory Usage"
     "test-startup.sh:Cold Startup Time"
-    "test-config-reload.sh:Config Reload (caddy.rs only)"
-    "test-metrics.sh:Metrics Endpoint (caddy.rs only)"
+    "test-config-reload.sh:Config Reload (torana only)"
+    "test-metrics.sh:Metrics Endpoint (torana only)"
 )
 
 PASSED=0
@@ -144,6 +144,6 @@ echo -e "${GREEN}Testing complete!${NC}"
 echo ""
 echo "Next steps:"
 echo "  1. Review results in: $PROJECT_ROOT/test-results/"
-echo "  2. Compare metrics: caddy.rs vs Caddy"
+echo "  2. Compare metrics: torana vs Caddy"
 echo "  3. Read TESTING.md for detailed analysis"
 echo ""

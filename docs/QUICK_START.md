@@ -1,11 +1,11 @@
-# caddy.rs Quick Start Testing Guide
+# torana Quick Start Testing Guide
 
-Complete step-by-step guide to test caddy.rs and compare it against Caddy.
+Complete step-by-step guide to test torana and compare it against Caddy.
 
 ## TL;DR - Run Everything in 5 Minutes
 
 ```bash
-# 1. Setup (downloads Caddy, builds caddy.rs, generates certs)
+# 1. Setup (downloads Caddy, builds torana, generates certs)
 bash scripts/setup.sh
 
 # 2. Start test app in one terminal
@@ -26,7 +26,7 @@ open test-results/
 
 **Required:**
 - macOS or Linux
-- Rust toolchain (for building caddy.rs)
+- Rust toolchain (for building torana)
 - Python 3 (for test backend)
 - curl (HTTP client)
 - Apache Bench (`ab` from httpd/apache2-utils)
@@ -48,14 +48,14 @@ bash scripts/setup.sh
 ```
 
 This script:
-- ✅ Builds caddy.rs from source
+- ✅ Builds torana from source
 - ✅ Downloads Caddy binary
 - ✅ Generates self-signed test certificates
 - ✅ Verifies all required tools
 
 **Output:**
 ```
-✓ caddy.rs built successfully
+✓ torana built successfully
 ✓ Caddy downloaded and extracted
 ✓ Test certificates generated
 ✓ All tools verified
@@ -116,8 +116,8 @@ Runs all 7 tests sequentially with progress reporting.
 3. ✅ HTTPS/TLS Performance
 4. ✅ Memory Usage
 5. ✅ Cold Startup Time
-6. ✅ Config Reload (caddy.rs SIGHUP only)
-7. ✅ Metrics Endpoint (caddy.rs only)
+6. ✅ Config Reload (torana SIGHUP only)
+7. ✅ Metrics Endpoint (torana only)
 
 **Time:** ~10-15 minutes (depends on load test duration)
 
@@ -139,10 +139,10 @@ bash scripts/test-memory.sh
 # Test 5: Startup time
 bash scripts/test-startup.sh
 
-# Test 6: Config reload (caddy.rs only)
+# Test 6: Config reload (torana only)
 bash scripts/test-config-reload.sh
 
-# Test 7: Metrics (caddy.rs only)
+# Test 7: Metrics (torana only)
 bash scripts/test-metrics.sh
 ```
 
@@ -152,9 +152,9 @@ bash scripts/test-metrics.sh
 
 ### Each Test Shows:
 
-**caddy.rs Results**
+**torana Results**
 ```
-Testing caddy.rs...
+Testing torana...
   ✓ HTTP 200 OK
   Request 1: 1.2ms
   Request 2: 1.3ms
@@ -220,7 +220,7 @@ cat test-results/memory-summary.txt
 ### 1. Basic HTTP Proxying
 **Tests:** Single request latency, basic proxying
 **Metric:** HTTP 200 status
-**Both:** ✅ Caddy.rs and Caddy
+**Both:** ✅ torana and Caddy
 
 ### 2. Concurrent Load Testing
 **Tests:** Throughput under concurrent connections
@@ -230,41 +230,41 @@ cat test-results/memory-summary.txt
 - Medium: 100 requests, 50 concurrent
 - Heavy: 1000 requests, 100 concurrent
 
-**Both:** ✅ Caddy.rs and Caddy
+**Both:** ✅ torana and Caddy
 
 ### 3. HTTPS/TLS Performance
 **Tests:** TLS handshake, HTTPS throughput
 **Metrics:** Requests/sec over HTTPS
 **Comparison:** rustls vs OpenSSL
 
-**Both:** ✅ Caddy.rs and Caddy
+**Both:** ✅ torana and Caddy
 
 ### 4. Memory Usage
 **Tests:** Idle memory, peak under load
 **Metrics:** RSS memory in MB
 **Load:** 1000 requests, 100 concurrent
 
-**Both:** ✅ Caddy.rs and Caddy
+**Both:** ✅ torana and Caddy
 
 ### 5. Cold Startup Time
 **Tests:** Time from process start to accepting connections
 **Metric:** Milliseconds
 **Runs:** 5 iterations per proxy
 
-**Both:** ✅ Caddy.rs and Caddy
+**Both:** ✅ torana and Caddy
 
 ### 6. Config Reload
 **Tests:** SIGHUP-based config reload without downtime
 **Metric:** Request continuity during reload
 
-**caddy.rs Only:** 🔒 SIGHUP signal
+**torana Only:** 🔒 SIGHUP signal
 (Caddy uses HTTP API, different approach)
 
 ### 7. Metrics Endpoint
 **Tests:** Prometheus metrics export
 **Metric:** Format compliance, counter accuracy
 
-**caddy.rs Only:** 📊 Native Prometheus endpoint
+**torana Only:** 📊 Native Prometheus endpoint
 (Caddy doesn't have built-in metrics)
 
 ---
@@ -275,27 +275,27 @@ After all tests complete:
 
 ```
 Memory at Idle
-  caddy.rs: 6-8 MB          ☑
+  torana: 6-8 MB          ☑
   Caddy:    75-80 MB        ☑
 
 Cold Startup
-  caddy.rs: <5ms            ☑
+  torana: <5ms            ☑
   Caddy:    ~400ms          ☑
 
 Binary Size
-  caddy.rs: 815 KB          ☑
+  torana: 815 KB          ☑
   Caddy:    58 MB           ☑
 
 Throughput (1000 req/sec @ 100 concurrent)
-  caddy.rs: ~95% success    ☑
+  torana: ~95% success    ☑
   Caddy:    ~96% success    ☑
 
 Config Reload
-  caddy.rs: SIGHUP (0 downtime) ☑
+  torana: SIGHUP (0 downtime) ☑
   Caddy:    HTTP API        ☑
 
 TLS Stack
-  caddy.rs: rustls (pure Rust) ☑
+  torana: rustls (pure Rust) ☑
   Caddy:    OpenSSL (C FFI) ☑
 ```
 
@@ -315,7 +315,7 @@ kill -9 <PID>
 bash scripts/start-app.sh
 ```
 
-### Caddy.rs build fails
+### torana build fails
 ```bash
 # Update Rust
 rustup update
@@ -353,7 +353,7 @@ ab -h
 lsof -i :9999
 
 # Force cleanup
-pkill -f caddyrs
+pkill -f torana
 pkill -f caddy
 pkill -f "http.server"
 ```
@@ -390,8 +390,8 @@ bash scripts/test-basic-http.sh
 # Terminal 1: Backend
 bash scripts/start-app.sh
 
-# Terminal 2: Caddy.rs
-target/release/caddyrs --config caddy.rs.toml
+# Terminal 2: torana
+target/release/torana --config torana.toml
 
 # Terminal 3: Monitor traffic
 watch -n 1 'curl -s http://localhost:9090/metrics | grep http_requests'
@@ -415,7 +415,7 @@ cat test-results/caddy-rs-startup.txt test-results/caddy-startup.txt | \
 
 After comparing results:
 
-### If caddy.rs is a good fit:
+### If torana is a good fit:
 1. Review [README.md](README.md) for features and config
 2. Read [TESTING.md](TESTING.md) for detailed analysis
 3. Deploy to your environment
@@ -450,8 +450,8 @@ cp test-results/* /path/to/analysis/
 | `test-https.sh` | TLS performance | 2 min | Both |
 | `test-memory.sh` | Memory profiling | 3 min | Both |
 | `test-startup.sh` | Startup time | 1 min | Both |
-| `test-config-reload.sh` | Config reload | 30 sec | caddy.rs |
-| `test-metrics.sh` | Prometheus metrics | 30 sec | caddy.rs |
+| `test-config-reload.sh` | Config reload | 30 sec | torana |
+| `test-metrics.sh` | Prometheus metrics | 30 sec | torana |
 | `run-all-tests.sh` | All tests | 10-15 min | Orchestrator |
 
 ---
@@ -460,6 +460,6 @@ cp test-results/* /path/to/analysis/
 
 - Check [TESTING.md](TESTING.md) for detailed test methodology
 - Read [README.md](README.md) for feature overview
-- See [caddy.rs.toml](caddy.rs.toml) for configuration options
+- See [torana.toml](torana.toml) for configuration options
 
 Happy testing! 🚀

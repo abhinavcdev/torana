@@ -16,5 +16,5 @@ labels: bug
 **How to reproduce**
 
 **Version / platform**
-- caddyrs version or commit:
+- torana version or commit:
 - OS:

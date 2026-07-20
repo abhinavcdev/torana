@@ -27,11 +27,11 @@ type ProxyBody = BoxBody<Bytes, hyper::Error>;
 type LbCache = Arc<RwLock<HashMap<String, Arc<upstream::LoadBalancer>>>>;
 
 #[derive(Parser)]
-#[command(name = "caddyrs")]
+#[command(name = "torana")]
 #[command(about = "Rust-native micro reverse proxy")]
 struct Cli {
     /// Path to config file
-    #[arg(short, long, default_value = "caddy.rs.toml")]
+    #[arg(short, long, default_value = "torana.toml")]
     config: String,
 }
 
@@ -57,9 +57,10 @@ async fn main() -> anyhow::Result<()> {
 
     config.validate()?;
 
-    tracing::info!("caddyrs starting");
+    tracing::info!("torana starting");
 
     let config_handle: Arc<RwLock<config::Config>> = Arc::new(RwLock::new(config.clone()));
+    let upstream_client = proxy::build_upstream_client();
     let lb_cache: LbCache = Arc::new(RwLock::new(upstream::build_lb_map(&config)));
 
     // SIGHUP triggers a config reload that also rebuilds the load balancers.
@@ -95,6 +96,7 @@ async fn main() -> anyhow::Result<()> {
         let config_handle = config_handle.clone();
         let metrics = metrics.clone();
         let lb_cache = lb_cache.clone();
+        let upstream_client = upstream_client.clone();
 
         if listener_cfg.protocol == "https" {
             let cert_path = listener_cfg.tls_cert.clone().expect("validated");
@@ -107,14 +109,21 @@ async fn main() -> anyhow::Result<()> {
                 config_handle,
                 metrics,
                 lb_cache,
+                upstream_client,
             ));
         } else {
             tracing::info!("HTTP listener started on {}", addr);
-            tokio::spawn(run_http_listener(tcp, config_handle, metrics, lb_cache));
+            tokio::spawn(run_http_listener(
+                tcp,
+                config_handle,
+                metrics,
+                lb_cache,
+                upstream_client,
+            ));
         }
     }
 
-    tracing::info!("caddyrs ready");
+    tracing::info!("torana ready");
 
     shutdown_signal().await;
     tracing::info!("Shutdown complete");
@@ -142,12 +151,14 @@ async fn run_http_listener(
     config_handle: Arc<RwLock<config::Config>>,
     metrics: Arc<metrics::Metrics>,
     lb_cache: LbCache,
+    upstream_client: proxy::UpstreamClient,
 ) {
     loop {
         let (stream, peer) = accept_or_retry(&listener).await;
         let config_handle = config_handle.clone();
         let metrics = metrics.clone();
         let lb_cache = lb_cache.clone();
+        let upstream_client = upstream_client.clone();
 
         tokio::spawn(async move {
             let io = hyper_util::rt::TokioIo::new(stream);
@@ -155,7 +166,16 @@ async fn run_http_listener(
                 let config_handle = config_handle.clone();
                 let metrics = metrics.clone();
                 let lb_cache = lb_cache.clone();
-                handle_request(req, peer, "http", config_handle, metrics, lb_cache)
+                let upstream_client = upstream_client.clone();
+                handle_request(
+                    req,
+                    peer,
+                    "http",
+                    config_handle,
+                    metrics,
+                    lb_cache,
+                    upstream_client,
+                )
             });
 
             if let Err(e) = hyper::server::conn::http1::Builder::new()
@@ -174,6 +194,7 @@ async fn run_https_listener(
     config_handle: Arc<RwLock<config::Config>>,
     metrics: Arc<metrics::Metrics>,
     lb_cache: LbCache,
+    upstream_client: proxy::UpstreamClient,
 ) {
     loop {
         let (stream, peer) = accept_or_retry(&listener).await;
@@ -181,6 +202,7 @@ async fn run_https_listener(
         let config_handle = config_handle.clone();
         let metrics = metrics.clone();
         let lb_cache = lb_cache.clone();
+        let upstream_client = upstream_client.clone();
 
         tokio::spawn(async move {
             let tls_stream = match acceptor.accept(stream).await {
@@ -196,7 +218,16 @@ async fn run_https_listener(
                 let config_handle = config_handle.clone();
                 let metrics = metrics.clone();
                 let lb_cache = lb_cache.clone();
-                handle_request(req, peer, "https", config_handle, metrics, lb_cache)
+                let upstream_client = upstream_client.clone();
+                handle_request(
+                    req,
+                    peer,
+                    "https",
+                    config_handle,
+                    metrics,
+                    lb_cache,
+                    upstream_client,
+                )
             });
 
             if let Err(e) = hyper::server::conn::http1::Builder::new()
@@ -256,6 +287,7 @@ async fn handle_request(
     config_handle: Arc<RwLock<config::Config>>,
     metrics: Arc<metrics::Metrics>,
     lb_cache: LbCache,
+    upstream_client: proxy::UpstreamClient,
 ) -> Result<Response<ProxyBody>, hyper::Error> {
     let start = Instant::now();
     metrics.http_requests_total.inc();
@@ -302,7 +334,13 @@ async fn handle_request(
     // headers; the body then streams through without buffering.
     let result = tokio::time::timeout(
         total_timeout,
-        proxy::proxy_request(req, &upstream_addr, client_addr, client_proto),
+        proxy::proxy_request(
+            req,
+            &upstream_addr,
+            client_addr,
+            client_proto,
+            &upstream_client,
+        ),
     )
     .await;
 

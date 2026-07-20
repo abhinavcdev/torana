@@ -1,9 +1,9 @@
 #!/bin/bash
 
 ##########################################################################
-# caddy.rs Testing Setup Script
+# torana Testing Setup Script
 #
-# Sets up both caddy.rs and Caddy for side-by-side comparison
+# Sets up both torana and Caddy for side-by-side comparison
 # Downloads dependencies, generates test certs, and verifies setup
 ##########################################################################
 
@@ -22,7 +22,7 @@ BLUE='\033[0;34m'
 NC='\033[0m' # No Color
 
 echo -e "${BLUE}========================================${NC}"
-echo -e "${BLUE}caddy.rs Testing Setup${NC}"
+echo -e "${BLUE}torana Testing Setup${NC}"
 echo -e "${BLUE}========================================${NC}"
 echo ""
 
@@ -30,19 +30,19 @@ echo ""
 mkdir -p "$TOOLS_DIR"
 echo -e "${YELLOW}[1/5]${NC} Creating tools directory: $TOOLS_DIR"
 
-# Build caddy.rs
+# Build torana
 echo ""
-echo -e "${YELLOW}[2/5]${NC} Building caddy.rs..."
+echo -e "${YELLOW}[2/5]${NC} Building torana..."
 cd "$PROJECT_ROOT"
 
 if command -v cargo &> /dev/null; then
     cargo build --release 2>&1 | grep -E "Finished|error" || true
-    CADDYRS_BIN="$PROJECT_ROOT/target/release/caddyrs"
+    CADDYRS_BIN="$PROJECT_ROOT/target/release/torana"
     if [ -f "$CADDYRS_BIN" ]; then
-        echo -e "${GREEN}✓ caddy.rs built successfully${NC}"
+        echo -e "${GREEN}✓ torana built successfully${NC}"
         ls -lh "$CADDYRS_BIN"
     else
-        echo -e "${RED}✗ Failed to build caddy.rs${NC}"
+        echo -e "${RED}✗ Failed to build torana${NC}"
         exit 1
     fi
 else
@@ -169,7 +169,7 @@ echo "  Run all tests:"
 echo -e "    ${YELLOW}bash $SCRIPT_DIR/run-all-tests.sh${NC}"
 echo ""
 echo "Paths:"
-echo -e "  caddy.rs: ${GREEN}$CADDYRS_BIN${NC}"
+echo -e "  torana: ${GREEN}$CADDYRS_BIN${NC}"
 echo -e "  Caddy:    ${GREEN}$CADDY_BIN${NC}"
 echo -e "  Certs:    ${GREEN}$CERTS_DIR${NC}"
 echo ""

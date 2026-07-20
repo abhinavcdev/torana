@@ -14,7 +14,7 @@ TOOLS_DIR="$PROJECT_ROOT/tools"
 LOGS_DIR="$PROJECT_ROOT/logs"
 RESULTS_DIR="$PROJECT_ROOT/test-results"
 
-CADDYRS_BIN="$PROJECT_ROOT/target/release/caddyrs"
+CADDYRS_BIN="$PROJECT_ROOT/target/release/torana"
 CADDY_BIN="$TOOLS_DIR/caddy"
 
 mkdir -p "$LOGS_DIR" "$RESULTS_DIR"
@@ -38,7 +38,7 @@ if ! command -v curl &> /dev/null; then
 fi
 
 # Kill any existing instances
-pkill -f "caddyrs.*--config" 2>/dev/null || true
+pkill -f "torana.*--config" 2>/dev/null || true
 pkill -f "caddy.*run.*--config" 2>/dev/null || true
 sleep 2
 
@@ -58,7 +58,7 @@ measure_startup() {
     # Use perl for microsecond precision timing (works on macOS and Linux)
     local start_time=$(perl -e 'print int(time * 1000000)')
 
-    if [ "$name" = "caddy.rs" ]; then
+    if [ "$name" = "torana" ]; then
         "$binary" --config "$config" > /dev/null 2>&1 &
     else
         "$binary" run --config "$config" > /dev/null 2>&1 &
@@ -89,8 +89,8 @@ measure_startup() {
     return 1
 }
 
-# Test caddy.rs multiple times
-echo -e "${YELLOW}Testing caddy.rs startup time...${NC}"
+# Test torana multiple times
+echo -e "${YELLOW}Testing torana startup time...${NC}"
 echo ""
 
 CADDYRS_STARTUP_RESULTS="$RESULTS_DIR/caddy-rs-startup.txt"
@@ -101,7 +101,7 @@ CADDYRS_TIMES=()
 
 for i in {1..5}; do
     echo -n "    Attempt $i: "
-    TIME=$(measure_startup "$CADDYRS_BIN" "$PROJECT_ROOT/caddy.rs.toml" "caddy.rs")
+    TIME=$(measure_startup "$CADDYRS_BIN" "$PROJECT_ROOT/torana.toml" "torana")
 
     if [ "$TIME" != "TIMEOUT" ]; then
         echo -e "${GREEN}${TIME}ms${NC}"
@@ -114,7 +114,7 @@ for i in {1..5}; do
     sleep 1
 done
 
-# Calculate average for caddy.rs
+# Calculate average for torana
 if [ ${#CADDYRS_TIMES[@]} -gt 0 ]; then
     CADDYRS_AVG=$(printf '%s\n' "${CADDYRS_TIMES[@]}" | awk '{sum+=$1} END {printf "%.1f", sum/NR}')
     CADDYRS_MIN=$(printf '%s\n' "${CADDYRS_TIMES[@]}" | sort -n | head -1)
@@ -126,7 +126,7 @@ else
 fi
 
 echo ""
-echo -e "  caddy.rs Results:"
+echo -e "  torana Results:"
 echo -e "    Average: ${GREEN}$CADDYRS_AVG ms${NC}"
 echo -e "    Min: ${GREEN}$CADDYRS_MIN ms${NC}"
 echo -e "    Max: ${GREEN}$CADDYRS_MAX ms${NC}"
@@ -183,7 +183,7 @@ echo ""
 
 if command -v bc &> /dev/null && [ "$CADDYRS_AVG" != "N/A" ] && [ "$CADDY_AVG" != "N/A" ] && [ "${CADDYRS_AVG%.*}" != "0" ]; then
     RATIO=$(echo "scale=1; $CADDY_AVG / $CADDYRS_AVG" | bc)
-    echo -e "  caddy.rs is ${GREEN}${RATIO}x faster${NC} than Caddy"
+    echo -e "  torana is ${GREEN}${RATIO}x faster${NC} than Caddy"
 elif [ "$CADDYRS_AVG" != "N/A" ] && [ "$CADDY_AVG" != "N/A" ]; then
     echo -e "  Both startup times are extremely fast (<< 1ms)"
 fi
@@ -201,7 +201,7 @@ Test Configuration:
 - Metric: Time from process start to accepting HTTP connections
 - Measurement: Using curl to detect readiness
 
-caddy.rs Results:
+torana Results:
 - Average: $CADDYRS_AVG ms
 - Minimum: $CADDYRS_MIN ms
 - Maximum: $CADDYRS_MAX ms
@@ -221,7 +221,7 @@ Test Date: $(date)
 
 Analysis:
 - Lower is better
-- caddy.rs prioritizes fast startup (important for edge/serverless)
+- torana prioritizes fast startup (important for edge/serverless)
 - Caddy has more startup overhead due to Go runtime initialization
 EOF
 

@@ -1,11 +1,11 @@
 [package]
-name = "caddyrs"
-version = "0.1.0"
+name = "torana"
+version = "0.2.0"
 edition = "2021"
 rust-version = "1.75"
 description = "Tiny Rust-native reverse proxy for edge, sidecar, and embedded use"
 license = "MIT OR Apache-2.0"
-repository = "https://github.com/abhinavcdev/caddyrs"
+repository = "https://github.com/abhinavcdev/torana"
 readme = "README.md"
 keywords = ["proxy", "reverse-proxy", "http", "load-balancer", "rustls"]
 categories = ["network-programming", "web-programming::http-server"]
@@ -13,7 +13,7 @@ categories = ["network-programming", "web-programming::http-server"]
 [dependencies]
 tokio = { version = "1.40", features = ["full"] }
 hyper = { version = "1.4", features = ["full"] }
-hyper-util = { version = "0.1", features = ["tokio"] }
+hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
 http-body-util = "0.1"
 bytes = "1.5"
 rustls = { version = "0.23", features = ["std", "ring"] }

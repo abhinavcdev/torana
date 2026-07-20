@@ -14,7 +14,7 @@ TOOLS_DIR="$PROJECT_ROOT/tools"
 LOGS_DIR="$PROJECT_ROOT/logs"
 RESULTS_DIR="$PROJECT_ROOT/test-results"
 
-CADDYRS_BIN="$PROJECT_ROOT/target/release/caddyrs"
+CADDYRS_BIN="$PROJECT_ROOT/target/release/torana"
 CADDY_BIN="$TOOLS_DIR/caddy"
 
 mkdir -p "$LOGS_DIR" "$RESULTS_DIR"
@@ -56,7 +56,7 @@ if [ ! -f "$PROJECT_ROOT/certs/tls.crt" ] || [ ! -f "$PROJECT_ROOT/certs/tls.key
 fi
 
 # Kill any existing instances
-pkill -f "caddyrs.*--config" 2>/dev/null || true
+pkill -f "torana.*--config" 2>/dev/null || true
 pkill -f "caddy.*run.*--config" 2>/dev/null || true
 sleep 1
 
@@ -72,17 +72,17 @@ cat > "$PROJECT_ROOT/Caddyfile" << 'EOF'
 }
 EOF
 
-echo -e "${YELLOW}Testing caddy.rs...${NC}"
+echo -e "${YELLOW}Testing torana...${NC}"
 echo ""
 
-# Start caddy.rs
-"$CADDYRS_BIN" --config "$PROJECT_ROOT/caddy.rs.toml" \
-    > "$LOGS_DIR/caddyrs-https.log" 2>&1 &
+# Start torana
+"$CADDYRS_BIN" --config "$PROJECT_ROOT/torana.toml" \
+    > "$LOGS_DIR/torana-https.log" 2>&1 &
 CADDYRS_PID=$!
 sleep 2
 
 if ! kill -0 $CADDYRS_PID 2>/dev/null; then
-    echo -e "${RED}✗ Failed to start caddy.rs${NC}"
+    echo -e "${RED}✗ Failed to start torana${NC}"
     exit 1
 fi
 
@@ -162,10 +162,10 @@ Test Configuration:
 - Keep-alive: Enabled
 - Certificate: Self-signed (test cert)
 
-caddy.rs Results:
+torana Results:
 - TLS Stack: rustls (pure Rust)
 - Full results: $CADDYRS_HTTPS_RESULTS
-- Logs: $LOGS_DIR/caddyrs-https.log
+- Logs: $LOGS_DIR/torana-https.log
 
 Caddy Results:
 - TLS Stack: OpenSSL (C FFI)

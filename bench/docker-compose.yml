@@ -1,4 +1,4 @@
-# Local benchmark: caddyrs vs Caddy vs nginx, all proxying the same backend.
+# Local benchmark: torana vs Caddy vs nginx, all proxying the same backend.
 # Usage: ./bench/bench.sh   (see bench/README.md)
 
 services:
@@ -7,12 +7,12 @@ services:
     volumes:
       - ./backend:/usr/share/nginx/html:ro
 
-  caddyrs:
+  torana:
     build:
       context: ..
       dockerfile: Dockerfile
     volumes:
-      - ./configs/caddyrs.toml:/etc/caddyrs/caddy.rs.toml:ro
+      - ./configs/torana.toml:/etc/torana/torana.toml:ro
     depends_on: [backend]
 
   caddy:

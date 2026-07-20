@@ -37,6 +37,49 @@ fn spawn_backend(body: &'static str) -> u16 {
     port
 }
 
+/// A keep-alive backend that serves many requests per connection and counts
+/// how many connections it has accepted.
+fn spawn_keepalive_backend(
+    body: &'static str,
+) -> (u16, std::sync::Arc<std::sync::atomic::AtomicUsize>) {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::Arc;
+
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind backend");
+    let port = listener.local_addr().unwrap().port();
+    let connections = Arc::new(AtomicUsize::new(0));
+    let counter = connections.clone();
+    std::thread::spawn(move || {
+        for stream in listener.incoming() {
+            let Ok(mut stream) = stream else { continue };
+            counter.fetch_add(1, Ordering::SeqCst);
+            std::thread::spawn(move || {
+                let mut buf = [0u8; 4096];
+                let mut req = Vec::new();
+                loop {
+                    // Serve requests on this connection until the peer closes.
+                    while !req.windows(4).any(|w| w == b"\r\n\r\n") {
+                        match stream.read(&mut buf) {
+                            Ok(0) | Err(_) => return,
+                            Ok(n) => req.extend_from_slice(&buf[..n]),
+                        }
+                    }
+                    req.clear();
+                    let response = format!(
+                        "HTTP/1.1 200 OK\r\nContent-Length: {}\r\n\r\n{}",
+                        body.len(),
+                        body
+                    );
+                    if stream.write_all(response.as_bytes()).is_err() {
+                        return;
+                    }
+                }
+            });
+        }
+    });
+    (port, connections)
+}
+
 /// A backend that accepts connections but never responds (for timeout tests).
 fn spawn_hanging_backend() -> u16 {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind backend");
@@ -76,7 +119,7 @@ mod tempdir {
     impl TempDir {
         pub fn new() -> Self {
             let dir = std::env::temp_dir().join(format!(
-                "caddyrs-test-{}-{}",
+                "torana-test-{}-{}",
                 std::process::id(),
                 std::time::SystemTime::now()
                     .duration_since(std::time::UNIX_EPOCH)
@@ -102,10 +145,10 @@ impl TestProxy {
     /// `ready_port` accepts connections.
     fn start(config: &str, ready_port: u16) -> Self {
         let dir = tempdir::TempDir::new();
-        let config_path = dir.path().join("caddy.rs.toml");
+        let config_path = dir.path().join("torana.toml");
         std::fs::write(&config_path, config).unwrap();
 
-        let process = Command::new(env!("CARGO_BIN_EXE_caddyrs"))
+        let process = Command::new(env!("CARGO_BIN_EXE_torana"))
             .args(["--config", config_path.to_str().unwrap()])
             .stdout(Stdio::null())
             .stderr(Stdio::null())
@@ -308,6 +351,35 @@ fn hanging_upstream_returns_504() {
 }
 
 #[test]
+fn upstream_connections_are_reused() {
+    use std::sync::atomic::Ordering;
+
+    let (backend_port, connections) = spawn_keepalive_backend("pooled");
+    let listen_port = free_port();
+    let config = http_config(listen_port, free_port(), &[(backend_port, 100)]);
+    let _proxy = TestProxy::start(&config, listen_port);
+
+    let client = reqwest::blocking::Client::new();
+    for i in 0..20 {
+        let response = client
+            .get(format!("http://127.0.0.1:{}/", listen_port))
+            .timeout(Duration::from_secs(5))
+            .send()
+            .unwrap_or_else(|e| panic!("request {} failed: {}", i, e));
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.text().unwrap(), "pooled");
+    }
+
+    let opened = connections.load(Ordering::SeqCst);
+    assert!(
+        opened < 20,
+        "expected pooled upstream connections, but 20 sequential requests \
+         opened {} connections",
+        opened
+    );
+}
+
+#[test]
 fn metrics_endpoint_reports_requests() {
     let backend_port = spawn_backend("ok");
     let listen_port = free_port();
@@ -360,7 +432,7 @@ upstream = [{ addr = "https://example.com" }]
     )
     .unwrap();
 
-    let status = Command::new(env!("CARGO_BIN_EXE_caddyrs"))
+    let status = Command::new(env!("CARGO_BIN_EXE_torana"))
         .args(["--config", config_path.to_str().unwrap()])
         .stdout(Stdio::null())
         .stderr(Stdio::null())
