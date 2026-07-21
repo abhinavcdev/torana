@@ -1,0 +1,27 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+---
+
+<DocsLayout
+  current="plugins"
+  title="Sandboxed WASM plugins"
+  description="Attach a fuel-limited WebAssembly request filter to a route — no filesystem, network, or process access, so a plugin can allow or deny a request but nothing more."
+>
+  <h1>Sandboxed WASM plugins</h1>
+  <p class="docs-sub">A real sandbox, not a scripting hook — a plugin cannot reach anything outside the request it's evaluating.</p>
+
+  <p>Build with <code>cargo build --release --features plugins</code> (off by default — wasmtime's Cranelift JIT roughly doubles the binary, from ~5.3&nbsp;MB to ~12&nbsp;MB). A plugin is a WASM module exporting <code>memory</code>, <code>alloc(len) -&gt; ptr</code>, and <code>on_request(method_ptr, method_len, path_ptr, path_len) -&gt; i32</code>: return <code>0</code> to allow, a code in <code>400..600</code> to deny with that status, anything else denies with <code>403</code>. No host functions are exposed — a plugin cannot reach the filesystem, network, or process; wasmtime's sandbox is the entire boundary, and every call runs under a fuel limit so a runaway loop is denied with <code>500</code> instead of hanging the request.</p>
+
+  <CodeBlock
+    label="attach a plugin to a route"
+    copy={'[[route]]\nname = "api"\nplugin = "./plugins/auth-filter.wasm"\nupstream = [{ addr = "http://127.0.0.1:3000" }]'}
+  ><Fragment set:html={`<span class="cm">[[route]]</span>
+name = <span class="ac">"api"</span>
+plugin = <span class="ac">"./plugins/auth-filter.wasm"</span>
+upstream = [{ addr = <span class="ac">"http://127.0.0.1:3000"</span> }]`} /></CodeBlock>
+
+  <div class="callout">See <code>torana-core/src/plugin.rs</code> for the full ABI and a working example plugin, compiled to real WASM as part of the test suite (not just documented — actually built and executed under a fuel limit in CI).</div>
+
+  <p>Next: <a href="../embedding/">using torana-core as a library</a>.</p>
+</DocsLayout>

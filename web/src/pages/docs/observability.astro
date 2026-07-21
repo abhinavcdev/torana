@@ -1,0 +1,41 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+---
+
+<DocsLayout
+  current="observability"
+  title="Observability"
+  description="torana's Prometheus metrics, /healthz endpoint, and structured JSON logs — what's exposed and how to scrape it."
+>
+  <h1>Observability</h1>
+  <p class="docs-sub">Prometheus metrics, health checks for orchestrators, and structured logs.</p>
+
+  <h2>Endpoints</h2>
+  <p>The metrics listener (<code>global.metrics_addr</code>) serves two paths: <code>/metrics</code> (Prometheus text format) and <code>/healthz</code> (returns <code>200 ok</code> — wire it into liveness and readiness probes).</p>
+
+  <h2>Metrics</h2>
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Metric</th><th>Type</th><th>Meaning</th></tr></thead>
+      <tbody>
+        <tr><td><code>http_requests_total</code></td><td class="td-note">counter</td><td class="td-note">every request received</td></tr>
+        <tr><td><code>http_request_duration_seconds</code></td><td class="td-note">histogram</td><td class="td-note">time from request receipt to upstream response headers</td></tr>
+        <tr><td><code>upstream_connection_errors</code></td><td class="td-note">counter</td><td class="td-note">failed or timed-out upstream requests</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <CodeBlock
+    label="prometheus scrape config"
+    copy={'scrape_configs:\n  - job_name: torana\n    static_configs:\n      - targets: ["localhost:9090"]'}
+  ><Fragment set:html={`scrape_configs:
+  - job_name: <span class="ac">torana</span>
+    static_configs:
+      - targets: [<span class="ac">"localhost:9090"</span>]`} /></CodeBlock>
+
+  <h2>Logs</h2>
+  <p>Structured JSON on stdout by default (<code>log_format = "json"</code>); set any other value for human-readable text. Levels follow <code>log_level</code>. Startup logs every bound listener; warnings fire for accepted-but-unimplemented config fields.</p>
+
+  <p>Next: <a href="../deployment/">deployment recipes</a>.</p>
+</DocsLayout>

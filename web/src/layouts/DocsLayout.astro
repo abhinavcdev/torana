@@ -1,0 +1,69 @@
+---
+import BaseLayout from "./BaseLayout.astro";
+
+interface Props {
+  title: string;
+  description: string;
+  current: string;
+}
+const { title, description, current } = Astro.props;
+const base = import.meta.env.BASE_URL;
+
+const nav: { group: string; items: { slug: string; label: string }[] }[] = [
+  {
+    group: "Getting started",
+    items: [
+      { slug: "", label: "Overview" },
+      { slug: "installation", label: "Installation" },
+      { slug: "quickstart", label: "Quick start" },
+    ],
+  },
+  {
+    group: "Reference",
+    items: [
+      { slug: "configuration", label: "Configuration" },
+      { slug: "http2-acme", label: "HTTP/2 & automatic HTTPS" },
+      { slug: "security", label: "mTLS, headers & mirroring" },
+      { slug: "plugins", label: "WASM plugins" },
+      { slug: "embedding", label: "Using it as a library" },
+      { slug: "signals", label: "Signals & reloads" },
+      { slug: "observability", label: "Observability" },
+    ],
+  },
+  {
+    group: "Operations",
+    items: [
+      { slug: "deployment", label: "Deployment" },
+      { slug: "benchmarking", label: "Benchmarking" },
+      { slug: "troubleshooting", label: "Troubleshooting" },
+      { slug: "roadmap", label: "Roadmap" },
+    ],
+  },
+];
+---
+
+<BaseLayout title={title} description={description} active="docs">
+  <div class="wrap">
+    <div class="docs-layout">
+      <nav class="docs-nav" aria-label="Docs">
+        {nav.map((group) => (
+          <Fragment>
+            <div class="dn-label">{group.group}</div>
+            {group.items.map((item) => (
+              <a
+                href={`${base}docs/${item.slug ? item.slug + "/" : ""}`}
+                class={current === item.slug ? "active" : ""}
+                aria-current={current === item.slug ? "page" : undefined}
+              >
+                {item.label}
+              </a>
+            ))}
+          </Fragment>
+        ))}
+      </nav>
+      <div class="docs-body">
+        <slot />
+      </div>
+    </div>
+  </div>
+</BaseLayout>

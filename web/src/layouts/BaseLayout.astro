@@ -1,0 +1,77 @@
+---
+import Header from "../components/Header.astro";
+import Footer from "../components/Footer.astro";
+import "../styles/global.css";
+
+interface Props {
+  title: string;
+  description: string;
+  active?: string;
+}
+
+const { title, description, active } = Astro.props;
+const canonicalURL = new URL(Astro.url.pathname, Astro.site);
+const ogImageURL = new URL("/torana/og-image.png", Astro.site);
+const siteTitle = title === "torana" ? title : `${title} — torana`;
+---
+
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{siteTitle}</title>
+    <meta name="description" content={description} />
+    <link rel="canonical" href={canonicalURL} />
+    <link rel="icon" type="image/svg+xml" href="/torana/favicon.svg" />
+    <meta name="theme-color" content="#FCFBF9" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#141110" media="(prefers-color-scheme: dark)" />
+    <meta name="generator" content={Astro.generator} />
+
+    <!-- Open Graph -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="torana" />
+    <meta property="og:title" content={siteTitle} />
+    <meta property="og:description" content={description} />
+    <meta property="og:url" content={canonicalURL} />
+    <meta property="og:image" content={ogImageURL} />
+
+    <!-- Twitter -->
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={siteTitle} />
+    <meta name="twitter:description" content={description} />
+    <meta name="twitter:image" content={ogImageURL} />
+
+    <!-- Structured data: describes torana as software, for rich results -->
+    <script type="application/ld+json" set:html={JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "SoftwareApplication",
+      "name": "torana",
+      "applicationCategory": "DeveloperApplication",
+      "operatingSystem": "Linux, macOS",
+      "description": "A tiny reverse proxy written in Rust — HTTP/2, automatic HTTPS via ACME, mTLS, health checks, retries, and sandboxed WASM plugins in a single static binary.",
+      "url": "https://abhinavcdev.github.io/torana/",
+      "codeRepository": "https://github.com/abhinavcdev/torana",
+      "license": "https://github.com/abhinavcdev/torana/blob/main/LICENSE-MIT",
+      "programmingLanguage": "Rust",
+      "offers": { "@type": "Offer", "price": "0", "priceCurrency": "USD" }
+    })} />
+
+    <!-- Set before first paint: avoids a flash of the wrong theme. -->
+    <script is:inline>
+      (function () {
+        try {
+          var stored = localStorage.getItem("torana-theme");
+          if (stored === "light" || stored === "dark") {
+            document.documentElement.setAttribute("data-theme", stored);
+          }
+        } catch (e) {}
+      })();
+    </script>
+  </head>
+  <body>
+    <Header active={active} />
+    <slot />
+    <Footer />
+  </body>
+</html>

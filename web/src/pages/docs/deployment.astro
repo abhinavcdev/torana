@@ -1,0 +1,55 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+---
+
+<DocsLayout
+  current="deployment"
+  title="Deployment"
+  description="Deploy torana as a docker-compose front door or a Kubernetes sidecar, with liveness/readiness probes wired into /healthz."
+>
+  <h1>Deployment</h1>
+  <p class="docs-sub">Recipes for docker-compose and Kubernetes.</p>
+
+  <h2>docker-compose front door</h2>
+  <CodeBlock
+    label="compose.yaml"
+    copy={'services:\n  torana:\n    build: https://github.com/abhinavcdev/torana.git\n    ports: ["8080:8080"]\n    volumes: ["./torana.toml:/etc/torana/torana.toml:ro"]\n    depends_on: [app]\n  app:\n    image: your-app'}
+  ><Fragment set:html={`services:
+  torana:
+    build: <span class="ac">https://github.com/abhinavcdev/torana.git</span>
+    ports: [<span class="ac">"8080:8080"</span>]
+    volumes: [<span class="ac">"./torana.toml:/etc/torana/torana.toml:ro"</span>]
+    depends_on: [app]
+  app:
+    image: <span class="ac">your-app</span>`} /></CodeBlock>
+
+  <h2>Kubernetes sidecar</h2>
+  <p>Build the image from the repo Dockerfile, push it to your registry, and mount the config from a ConfigMap. Probes hit <code>/healthz</code>; graceful draining makes rolling restarts drop zero requests.</p>
+  <CodeBlock
+    label="pod spec (excerpt)"
+    copy={'containers:\n  - name: app\n    image: your-app\n  - name: torana\n    image: your-registry/torana:latest\n    args: ["--config", "/etc/torana/torana.toml"]\n    ports:\n      - containerPort: 8080\n    volumeMounts:\n      - name: torana-config\n        mountPath: /etc/torana\n    livenessProbe:\n      httpGet: { path: /healthz, port: 9090 }\n    readinessProbe:\n      httpGet: { path: /healthz, port: 9090 }\nvolumes:\n  - name: torana-config\n    configMap:\n      name: torana-config'}
+  ><Fragment set:html={`containers:
+  - name: app
+    image: <span class="ac">your-app</span>
+  - name: torana
+    image: <span class="ac">your-registry/torana:latest</span>
+    args: [<span class="ac">"--config"</span>, <span class="ac">"/etc/torana/torana.toml"</span>]
+    ports:
+      - containerPort: 8080
+    volumeMounts:
+      - name: torana-config
+        mountPath: /etc/torana
+    livenessProbe:
+      httpGet: { path: <span class="ac">/healthz</span>, port: 9090 }
+    readinessProbe:
+      httpGet: { path: <span class="ac">/healthz</span>, port: 9090 }
+volumes:
+  - name: torana-config
+    configMap:
+      name: <span class="ac">torana-config</span>`} /></CodeBlock>
+
+  <div class="callout">Expose <code>metrics_addr</code> as <code>0.0.0.0:9090</code> inside containers so probes and scrapers can reach it; keep it on <code>127.0.0.1</code> when the proxy shares a network namespace with its scraper.</div>
+
+  <p>Next: <a href="../benchmarking/">benchmarking</a>.</p>
+</DocsLayout>

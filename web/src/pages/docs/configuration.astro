@@ -1,0 +1,78 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+---
+
+<DocsLayout
+  current="configuration"
+  title="Configuration"
+  description="The complete torana.toml reference: every field, whether it's enforced or planned, and what it does — global, listener, and route settings including routing, retries, and health checks."
+>
+  <h1>Configuration</h1>
+  <p class="docs-sub">TOML, one file, validated at startup and on every reload.</p>
+
+  <p>Invalid configs exit non-zero at startup and are rejected (keeping the running config) on reload. Fields marked <span class="pill off">planned</span> parse without error so configs stay forward-compatible, but torana logs a warning rather than silently ignoring them.</p>
+
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Field</th><th>Status</th><th>Notes</th></tr></thead>
+      <tbody>
+        <tr><td><code>global.log_level</code></td><td><span class="pill on">enforced</span></td><td class="td-note">error · warn · info (default) · debug · trace</td></tr>
+        <tr><td><code>global.log_format</code></td><td><span class="pill on">enforced</span></td><td class="td-note">json (default) or plain text</td></tr>
+        <tr><td><code>global.metrics_addr</code></td><td><span class="pill on">enforced</span></td><td class="td-note">metrics + health listener, default 127.0.0.1:9090</td></tr>
+        <tr><td><code>global.workers</code></td><td><span class="pill off">ignored</span></td><td class="td-note">Tokio sizes its own thread pool</td></tr>
+        <tr><td><code>listener.addr</code></td><td><span class="pill on">enforced</span></td><td class="td-note">socket address; binds fail fast at startup</td></tr>
+        <tr><td><code>listener.protocol</code></td><td><span class="pill on">enforced</span></td><td class="td-note">http or https</td></tr>
+        <tr><td><code>listener.tls_cert / tls_key</code></td><td><span class="pill on">enforced</span></td><td class="td-note">PEM paths; required when protocol = https unless acme is set</td></tr>
+        <tr><td><code>listener.tls_client_ca</code></td><td><span class="pill on">enforced</span></td><td class="td-note">mTLS — CA PEM path; client certs become mandatory; not combinable with acme</td></tr>
+        <tr><td><code>listener.acme.domains/contact_emails/cache_dir</code></td><td><span class="pill on">enforced*</span></td><td class="td-note">automatic HTTPS, RFC 8555 — *needs <code>--features acme</code></td></tr>
+        <tr><td><code>listener.acme.directory_url/staging/ca_cert</code></td><td><span class="pill on">enforced*</span></td><td class="td-note">target a private ACME server or LE staging — *needs <code>--features acme</code></td></tr>
+        <tr><td><code>route.name</code></td><td><span class="pill on">enforced</span></td><td class="td-note">identifier used in logs and metrics</td></tr>
+        <tr><td><code>route.host</code></td><td><span class="pill on">enforced</span></td><td class="td-note">exact hostname, or "*.example.com" for subdomains; unset matches any host</td></tr>
+        <tr><td><code>route.path</code></td><td><span class="pill on">enforced</span></td><td class="td-note">prefix match on segment boundaries; unset matches any path</td></tr>
+        <tr><td><code>route.upstream[].addr</code></td><td><span class="pill on">enforced</span></td><td class="td-note">http://host:port — https upstreams are rejected</td></tr>
+        <tr><td><code>route.upstream[].weight</code></td><td><span class="pill on">enforced</span></td><td class="td-note">relative integer weight, default 100</td></tr>
+        <tr><td><code>route.retries</code></td><td><span class="pill on">enforced</span></td><td class="td-note">max attempts for GET/HEAD/OPTIONS with no body; default 2 with multiple upstreams</td></tr>
+        <tr><td><code>route.health_check.*</code></td><td><span class="pill on">enforced</span></td><td class="td-note">path/interval/timeout; absent = always healthy</td></tr>
+        <tr><td><code>route.plugin</code></td><td><span class="pill on">enforced*</span></td><td class="td-note">WASM request filter path — *needs <code>--features plugins</code></td></tr>
+        <tr><td><code>route.timeout.total</code></td><td><span class="pill on">enforced</span></td><td class="td-note">duration to upstream response headers, default 30s</td></tr>
+        <tr><td><code>route.timeout.connect / first_byte</code></td><td><span class="pill off">planned</span></td><td class="td-note">only total is enforced</td></tr>
+        <tr><td><code>route.when</code></td><td><span class="pill off">planned</span></td><td class="td-note">reserved for a future CEL-based matcher; use host/path today</td></tr>
+        <tr><td><code>route.headers.request / .response</code></td><td><span class="pill on">enforced</span></td><td class="td-note">per-direction overrides; empty value removes the header</td></tr>
+        <tr><td><code>route.mirror.addr / .rate</code></td><td><span class="pill on">enforced</span></td><td class="td-note">fire-and-forget; GET/HEAD/OPTIONS with no body only</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <h2>Durations</h2>
+  <p>Duration strings accept <code>ms</code>, <code>s</code>, and <code>m</code>: <code>"500ms"</code>, <code>"30s"</code>, <code>"5m"</code>. A bare number is rejected — units are mandatory.</p>
+
+  <h2>Weights</h2>
+  <p>Weights are relative, reduced by their greatest common divisor: <code>90 / 10</code> produces the same schedule as <code>9 / 1</code>. An upstream with no weight gets 100. The scheduler interleaves upstreams rather than sending long runs to one host.</p>
+
+  <h2>Routing</h2>
+  <p>Routes are matched in config order — first match wins. Put specific <code>host</code>/<code>path</code> combinations first and a constraint-free route last as a catch-all. A request that matches no route gets <code>404</code>.</p>
+  <CodeBlock
+    label="host + path routing"
+    copy={'[[route]]\nname = "api"\nhost = "api.example.com"\npath = "/v1"\nupstream = [{ addr = "http://127.0.0.1:3000" }]\nretries = 2\n\n[route.health_check]\npath = "/healthz"\ninterval = "10s"\ntimeout = "2s"\n\n[[route]]\nname = "default"\nupstream = [{ addr = "http://127.0.0.1:4000" }]'}
+  ><Fragment set:html={`<span class="cm">[[route]]</span>
+name = <span class="ac">"api"</span>
+host = <span class="ac">"api.example.com"</span>
+path = <span class="ac">"/v1"</span>
+upstream = [{ addr = <span class="ac">"http://127.0.0.1:3000"</span> }]
+retries = 2
+
+<span class="cm">[route.health_check]</span>
+path = <span class="ac">"/healthz"</span>
+interval = <span class="ac">"10s"</span>
+timeout = <span class="ac">"2s"</span>
+
+<span class="cm">[[route]]</span>              <span class="cm"># catch-all, no host/path — put it last</span>
+name = <span class="ac">"default"</span>
+upstream = [{ addr = <span class="ac">"http://127.0.0.1:4000"</span> }]`} /></CodeBlock>
+
+  <h2>Retries</h2>
+  <p>Only <code>GET</code>, <code>HEAD</code>, and <code>OPTIONS</code> requests with an empty body are retried, and only on a connect-level failure — a request that reached the upstream is never retried, so a non-idempotent request is never double-executed. Retried attempts skip upstreams already tried this request and prefer upstreams the health check considers up.</p>
+
+  <p>Next: <a href="../security/">mTLS, header rewriting &amp; mirroring</a>, <a href="../plugins/">sandboxed WASM plugins</a>, or <a href="../http2-acme/">HTTP/2 &amp; automatic HTTPS</a>.</p>
+</DocsLayout>

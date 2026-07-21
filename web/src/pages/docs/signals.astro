@@ -1,0 +1,31 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+---
+
+<DocsLayout
+  current="signals"
+  title="Signals & reloads"
+  description="SIGHUP reloads and validates torana's config without dropping the listener; SIGTERM and SIGINT drain in-flight connections gracefully before exit."
+>
+  <h1>Signals &amp; reloads</h1>
+  <p class="docs-sub">Zero-downtime config reload, and a graceful shutdown that finishes in-flight requests.</p>
+
+  <div class="table-scroll">
+    <table>
+      <thead><tr><th>Signal</th><th>Behavior</th></tr></thead>
+      <tbody>
+        <tr><td><code>SIGHUP</code></td><td class="td-note">Re-read and validate the config file. On success, listeners keep running and new load-balancer schedules apply immediately. On failure, the running config is kept and the error is logged.</td></tr>
+        <tr><td><code>SIGTERM</code> / <code>SIGINT</code></td><td class="td-note">Graceful shutdown: stop accepting, let in-flight requests finish (15&nbsp;s cap), then exit 0.</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <CodeBlock label="zero-downtime reload" copy="kill -HUP $(pgrep torana)">
+<Fragment set:html={`<span class="cm"># edit torana.toml, then:</span>
+kill -HUP $(pgrep torana)`} /></CodeBlock>
+
+  <div class="callout">Listeners themselves are bound once at startup — a reload updates routes, upstreams, and weights, but adding or removing a <code>[[listener]]</code> requires a restart. With graceful draining, a rolling restart behind an orchestrator is zero-dropped-requests anyway.</div>
+
+  <p>Next: <a href="../observability/">observability</a>.</p>
+</DocsLayout>

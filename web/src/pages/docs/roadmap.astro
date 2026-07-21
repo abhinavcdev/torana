@@ -1,0 +1,16 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+---
+
+<DocsLayout
+  current="roadmap"
+  title="Roadmap"
+  description="What torana has shipped release by release, and what's planned next: HTTP/3, upstream HTTP/2 and TLS, and a faster-ejecting circuit breaker."
+>
+  <h1>Roadmap</h1>
+  <p class="docs-sub">What's shipped, and what's next.</p>
+
+  <p>Route matching, active health checks, connect retries, and a sandboxed WASM plugin hook shipped in 0.4; header rewriting, traffic mirroring, and mTLS shipped in 0.5; client-facing HTTP/2 and automatic HTTPS via ACME shipped in 0.6. In rough priority order from here: HTTP/3, HTTP/2 and TLS to upstreams, and a circuit breaker that ejects a flapping upstream faster than health checks alone. The config schema reserves fields for what's left, so configs written today keep working.</p>
+
+  <p>If one of these matters to you, <a href="https://github.com/abhinavcdev/torana/issues">open an issue</a> — early-stage projects reorder roadmaps for real users. See the full <a href="https://github.com/abhinavcdev/torana/blob/main/CHANGELOG.md">CHANGELOG</a> for release-by-release detail.</p>
+</DocsLayout>

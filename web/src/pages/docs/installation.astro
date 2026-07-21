@@ -1,0 +1,37 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+---
+
+<DocsLayout
+  current="installation"
+  title="Installation"
+  description="Install torana from source, Docker, or a prebuilt binary — Linux musl and macOS, x86_64 and arm64."
+>
+  <h1>Installation</h1>
+  <p class="docs-sub">Three ways to get torana running: build it, pull the Docker image, or grab a release binary.</p>
+
+  <h2>From source</h2>
+  <p>Requires stable Rust 1.75 or newer.</p>
+  <CodeBlock label="build" copy={"git clone https://github.com/abhinavcdev/torana\ncd torana\ncargo build --release\n./target/release/torana --config torana.toml"}>
+git clone https://github.com/abhinavcdev/torana
+cd torana
+cargo build --release
+./target/release/torana --config torana.toml</CodeBlock>
+
+  <h2>Prebuilt binaries</h2>
+  <p>Tagged releases publish static binaries for Linux (musl, runs on any distro) and macOS, both x86_64 and arm64:</p>
+  <CodeBlock label="linux x86_64" copy={"curl -L https://github.com/abhinavcdev/torana/releases/latest/download/torana-latest-x86_64-unknown-linux-musl.tar.gz | tar xz\n./torana --config torana.toml"}>
+curl -L https://github.com/abhinavcdev/torana/releases/latest/download/\
+torana-latest-x86_64-unknown-linux-musl.tar.gz | tar xz
+./torana --config torana.toml</CodeBlock>
+
+  <h2>Docker</h2>
+  <p>The repo Dockerfile builds a static musl binary into a <code>FROM scratch</code> image — 5.3&nbsp;MB total:</p>
+  <CodeBlock label="docker" copy={"docker build -t torana https://github.com/abhinavcdev/torana.git\ndocker run -p 8080:8080 -v $PWD/torana.toml:/etc/torana/torana.toml torana"}>
+docker build -t torana https://github.com/abhinavcdev/torana.git
+docker run -p 8080:8080 \
+  -v $PWD/torana.toml:/etc/torana/torana.toml torana</CodeBlock>
+
+  <p>Next: the <a href="../quickstart/">quick start</a> to get a minimal config running.</p>
+</DocsLayout>

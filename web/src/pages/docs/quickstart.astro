@@ -1,0 +1,50 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+import CodeBlock from "../../components/CodeBlock.astro";
+---
+
+<DocsLayout
+  current="quickstart"
+  title="Quick start"
+  description="A minimal torana.toml — one listener, one route, one upstream — running and serving metrics in under a minute."
+>
+  <h1>Quick start</h1>
+  <p class="docs-sub">A minimal config: one HTTP listener, one route, one upstream.</p>
+
+  <CodeBlock
+    label="torana.toml"
+    copy={'[global]\nlog_level = "info"\nmetrics_addr = "127.0.0.1:9090"\n\n[[listener]]\naddr = "127.0.0.1:8080"\nprotocol = "http"\n\n[[route]]\nname = "default"\nupstream = [{ addr = "http://127.0.0.1:3000" }]'}
+  ><Fragment set:html={`<span class="cm">[global]</span>
+log_level = <span class="ac">"info"</span>
+metrics_addr = <span class="ac">"127.0.0.1:9090"</span>
+
+<span class="cm">[[listener]]</span>
+addr = <span class="ac">"127.0.0.1:8080"</span>
+protocol = <span class="ac">"http"</span>
+
+<span class="cm">[[route]]</span>
+name = <span class="ac">"default"</span>
+upstream = [{ addr = <span class="ac">"http://127.0.0.1:3000"</span> }]`} /></CodeBlock>
+
+  <p>Run it, send a request, check the metrics:</p>
+  <CodeBlock label="shell" copy={"./torana --config torana.toml &\ncurl -i http://127.0.0.1:8080/\ncurl http://127.0.0.1:9090/metrics"}
+  ><Fragment set:html={`./torana --config torana.toml &amp;
+curl -i http://127.0.0.1:8080/       <span class="cm"># proxied to :3000</span>
+curl http://127.0.0.1:9090/metrics   <span class="cm"># prometheus text</span>`} /></CodeBlock>
+
+  <h2>HTTPS termination</h2>
+  <CodeBlock
+    label="add a tls listener"
+    copy={'./scripts/gen-certs.sh\n\n# torana.toml\n[[listener]]\naddr = "0.0.0.0:8443"\nprotocol = "https"\ntls_cert = "./certs/tls.crt"\ntls_key = "./certs/tls.key"'}
+  ><Fragment set:html={`./scripts/gen-certs.sh   <span class="cm"># self-signed localhost pair</span>
+
+<span class="cm">[[listener]]</span>
+addr = <span class="ac">"0.0.0.0:8443"</span>
+protocol = <span class="ac">"https"</span>
+tls_cert = <span class="ac">"./certs/tls.crt"</span>
+tls_key = <span class="ac">"./certs/tls.key"</span>`} /></CodeBlock>
+
+  <p>Certificates are PEM; any CA-issued pair works the same way. Prefer certificates managed automatically? See <a href="../http2-acme/">automatic HTTPS via ACME</a>.</p>
+
+  <p>Next: the full <a href="../configuration/">configuration reference</a>.</p>
+</DocsLayout>

@@ -6,6 +6,8 @@
 
 A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. Single static binary (~5.3 MB), millisecond startup, pure-Rust TLS via [rustls](https://github.com/rustls/rustls) — no OpenSSL, no runtime dependencies.
 
+**[Full docs & site →](https://abhinavcdev.github.io/torana/)**
+
 *torana* (तोरण) is the Indian ceremonial gateway arch — a small, sturdy structure everything passes through.
 
 > **Status: early stage (v0.6).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.

@@ -1,0 +1,49 @@
+---
+interface Props {
+  active?: string;
+}
+const { active } = Astro.props;
+const base = import.meta.env.BASE_URL;
+---
+
+<div class="site-head">
+  <div class="wrap row">
+    <a class="brand" href={base} aria-label="torana home">
+      <svg width="27" height="23" viewBox="0 0 26 22" aria-hidden="true">
+        <rect x="1" y="2" width="24" height="2.6" rx="1" fill="var(--accent-bright)"/>
+        <rect x="3.5" y="7" width="19" height="2.2" rx="1" fill="var(--accent-bright)"/>
+        <rect x="5.5" y="11" width="3" height="11" rx="1" fill="var(--ink)"/>
+        <rect x="17.5" y="11" width="3" height="11" rx="1" fill="var(--ink)"/>
+      </svg>
+      <span class="brand-name">torana</span>
+    </a>
+    <nav class="nav" aria-label="Site">
+      <a href={`${base}#benchmarks`}>Benchmarks</a>
+      <a href={`${base}#uses`}>Use&nbsp;cases</a>
+      <a href={`${base}docs/`} class={active === "docs" ? "active" : ""}>Docs</a>
+      <a class="gh" href="https://github.com/abhinavcdev/torana">GitHub&nbsp;&#8599;</a>
+      <button class="theme-toggle" id="theme-toggle" type="button" aria-label="Toggle color theme">
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"><circle cx="12" cy="12" r="4.2"/><path d="M12 2.5v2.4M12 19.1v2.4M4.2 4.2l1.7 1.7M18.1 18.1l1.7 1.7M2.5 12h2.4M19.1 12h2.4M4.2 19.8l1.7-1.7M18.1 5.9l1.7-1.7"/></svg>
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20 14.5A8.5 8.5 0 1 1 9.5 4a6.8 6.8 0 0 0 10.5 10.5Z"/></svg>
+      </button>
+    </nav>
+  </div>
+</div>
+
+<script>
+  const STORAGE_KEY = "torana-theme";
+  const button = document.getElementById("theme-toggle");
+  const root = document.documentElement;
+
+  function currentTheme(): "light" | "dark" {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    if (stored === "light" || stored === "dark") return stored;
+    return window.matchMedia("(prefers-color-scheme: dark)").matches ? "dark" : "light";
+  }
+
+  button?.addEventListener("click", () => {
+    const next = currentTheme() === "dark" ? "light" : "dark";
+    root.setAttribute("data-theme", next);
+    localStorage.setItem(STORAGE_KEY, next);
+  });
+</script>

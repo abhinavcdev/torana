@@ -1,0 +1,21 @@
+---
+import DocsLayout from "../../layouts/DocsLayout.astro";
+const base = import.meta.env.BASE_URL;
+---
+
+<DocsLayout
+  current=""
+  title="Documentation"
+  description="Everything torana does, how to run it, and what to check when it misbehaves — installation, configuration, HTTP/2, automatic HTTPS, mTLS, plugins, and deployment."
+>
+  <h1>Documentation</h1>
+  <p class="docs-sub">Everything torana does, how to run it, and what to check when it misbehaves. Short on ceremony — every page is copy-paste runnable.</p>
+
+  <h2>Start here</h2>
+  <p>New to torana? <a href={`${base}docs/installation/`}>Install it</a>, then follow the <a href={`${base}docs/quickstart/`}>quick start</a> to get a config running in under a minute.</p>
+  <p>Already running it? Jump straight to the <a href={`${base}docs/configuration/`}>configuration reference</a>, or a specific capability: <a href={`${base}docs/http2-acme/`}>HTTP/2 &amp; automatic HTTPS</a>, <a href={`${base}docs/security/`}>mTLS, header rewriting &amp; mirroring</a>, or <a href={`${base}docs/plugins/`}>sandboxed WASM plugins</a>.</p>
+  <p>Running it in production? See <a href={`${base}docs/deployment/`}>deployment recipes</a>, <a href={`${base}docs/observability/`}>observability</a>, and <a href={`${base}docs/troubleshooting/`}>troubleshooting</a>.</p>
+
+  <h2>Design principle</h2>
+  <p>Every config field is either enforced or warns loudly at startup — there's no silent ignoring. The <a href={`${base}docs/configuration/`}>configuration reference</a> marks each field <span class="pill on">enforced</span> or <span class="pill off">planned</span>, and that table is the single source of truth for what torana actually does today.</p>
+</DocsLayout>
