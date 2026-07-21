@@ -26,7 +26,7 @@ pub fn load_tls_config(
         .ok_or_else(|| anyhow::anyhow!("No private key found in {}", key_path))?;
 
     let builder = rustls::ServerConfig::builder();
-    let server_config = match client_ca_path {
+    let mut server_config = match client_ca_path {
         Some(ca_path) => {
             let ca_certs = read_certs(ca_path)?;
             if ca_certs.is_empty() {
@@ -47,6 +47,10 @@ pub fn load_tls_config(
         }
         None => builder.with_no_client_auth().with_single_cert(certs, key)?,
     };
+    // Offer h2 first: a client that supports it will negotiate h2, one that
+    // doesn't falls back to http/1.1. The proxy-to-upstream leg still
+    // speaks HTTP/1.1 regardless of what the client negotiated.
+    server_config.alpn_protocols = vec![b"h2".to_vec(), b"http/1.1".to_vec()];
 
     Ok(TlsAcceptor::from(Arc::new(server_config)))
 }

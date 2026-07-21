@@ -4,15 +4,15 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 [![Rust 1.75+](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](Cargo.toml)
 
-A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. Single static binary (~4.6 MB), millisecond startup, pure-Rust TLS via [rustls](https://github.com/rustls/rustls) — no OpenSSL, no runtime dependencies.
+A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. Single static binary (~5.3 MB), millisecond startup, pure-Rust TLS via [rustls](https://github.com/rustls/rustls) — no OpenSSL, no runtime dependencies.
 
 *torana* (तोरण) is the Indian ceremonial gateway arch — a small, sturdy structure everything passes through.
 
-> **Status: early stage (v0.5).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.
+> **Status: early stage (v0.6).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.
 
 ## What it does
 
-- **HTTP/1.1 reverse proxying** with streaming request/response bodies (no buffering)
+- **HTTP/1.1 and HTTP/2 (client-facing)** with streaming request/response bodies (no buffering) — HTTPS listeners negotiate h2 via ALPN; the upstream leg always speaks HTTP/1.1
 - **Host- and path-based routing** across multiple routes, first-match-wins, with a catch-all fallback
 - **Upstream connection pooling** — keep-alive connections are reused across requests
 - **Active health checks** — routes can probe upstreams on an interval; unhealthy upstreams are skipped
@@ -21,6 +21,7 @@ A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. 
 - **Header rewriting** — `route.headers` request/response overrides, with an empty value removing a header
 - **Traffic mirroring** — sample a fraction of `GET`/`HEAD`/`OPTIONS` traffic to a second upstream, fire-and-forget, with no effect on the real response
 - **mTLS** — `listener.tls_client_ca` makes client certificates mandatory; the verified cert's fingerprint is forwarded to the upstream and can never be spoofed by the client
+- **Automatic HTTPS via ACME** *(opt-in, `--features acme`)* — RFC 8555 / TLS-ALPN-01, works with Let's Encrypt or a private ACME server
 - **TLS termination** with rustls
 - **Weighted round-robin load balancing** across multiple upstreams
 - **Zero-downtime config reload** via `SIGHUP` — validated before swap; routes, upstreams, health checks, and plugins all rebuild atomically
@@ -36,10 +37,11 @@ A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. 
 
 Planned but **not implemented** — the config schema reserves fields for some of these, and torana will warn if you set them:
 
-- HTTP/2 and HTTP/3
+- HTTP/3
+- HTTP/2 to upstreams (the proxy-to-upstream leg is always HTTP/1.1)
 - TLS to upstreams (`https://` upstream addresses are rejected)
 - Circuit breaking (retries and health checks exist; a breaker that ejects a flapping upstream faster does not, yet)
-- Automatic HTTPS / ACME — if you want certificates managed for you, use [Caddy](https://caddyserver.com)
+- mTLS combined with ACME on the same listener
 
 If you need these today, use Caddy, nginx, or Envoy. torana trades features for a small, auditable binary.
 
@@ -154,6 +156,30 @@ tls_client_ca = "./certs/ca.crt"   # client certs become mandatory
 
 A connection without a certificate signed by `tls_client_ca` is rejected during the TLS handshake, before any HTTP is processed. On success, the verified certificate's SHA-256 fingerprint is forwarded to the upstream as `X-Client-Cert-Fingerprint` — and that header is always stripped from the client's original request first, so a client on a plain HTTP or non-mTLS listener can never spoof it.
 
+## HTTP/2
+
+HTTPS listeners negotiate h2 automatically via ALPN — nothing to configure. A client that doesn't support h2 falls back to http/1.1 on the same listener. The proxy-to-upstream leg is always HTTP/1.1 regardless of what the client negotiated (this proxy doesn't support HTTP/2 upstreams).
+
+## Automatic HTTPS via ACME (opt-in)
+
+```bash
+cargo build --release --features acme   # adds ~1.6 MB for the ACME client
+```
+
+```toml
+[[listener]]
+addr = "0.0.0.0:443"
+protocol = "https"
+
+[listener.acme]
+domains = ["example.com"]
+contact_emails = ["admin@example.com"]
+cache_dir = "./acme-cache"     # issued certs + account key, default "./acme-cache"
+# staging = true               # use Let's Encrypt's staging directory while testing
+```
+
+Certificates are obtained and renewed automatically via RFC 8555, using the TLS-ALPN-01 challenge — no separate port 80 listener or DNS record needed beyond what the domain already requires. `acme` is mutually exclusive with `tls_cert`/`tls_key` (it replaces them) and with `tls_client_ca` (mTLS + ACME on the same listener isn't supported yet). Point `directory_url` at a private ACME server instead of Let's Encrypt, and set `ca_cert` to trust that server's CA if it isn't in the public web PKI (this is exactly how torana's own end-to-end test verifies against a local [Pebble](https://github.com/letsencrypt/pebble) instance — see `scripts/test-acme-e2e.sh`).
+
 ## Using it as a library
 
 The proxy engine lives in a separate crate, [`torana-core`](torana-core), with none of the standalone binary's listener/signal machinery. Embed it inside a hyper server you already run:
@@ -181,8 +207,10 @@ let response = engine.handle(req, client_addr, "http").await?;
 | `global.workers` | ⚠️ ignored | Tokio manages its own thread pool |
 | `listener.addr` | ✅ | Must parse as a socket address, e.g. `0.0.0.0:443` |
 | `listener.protocol` | ✅ | `http` or `https` |
-| `listener.tls_cert` / `tls_key` | ✅ | PEM files, required for `https` |
-| `listener.tls_client_ca` | ✅ | mTLS: CA cert PEM; client certs become mandatory, verified fingerprint forwarded as `X-Client-Cert-Fingerprint` |
+| `listener.tls_cert` / `tls_key` | ✅ | PEM files, required for `https` unless `acme` is set |
+| `listener.tls_client_ca` | ✅ | mTLS: CA cert PEM; client certs become mandatory, verified fingerprint forwarded as `X-Client-Cert-Fingerprint`; not combinable with `acme` |
+| `listener.acme.domains/contact_emails/cache_dir` | ✅ *(needs `--features acme`)* | Automatic HTTPS via RFC 8555; replaces `tls_cert`/`tls_key` |
+| `listener.acme.directory_url/staging/ca_cert` | ✅ *(needs `--features acme`)* | Target a private ACME server or Let's Encrypt staging |
 | `route.name` | ✅ | Identifier used in logs and metrics |
 | `route.host` | ✅ | Exact hostname match (port stripped); `*.example.com` matches subdomains; unset matches any host |
 | `route.path` | ✅ | Path prefix match on segment boundaries; unset matches any path |
@@ -217,19 +245,22 @@ Fields marked ⚠️ parse without error (so configs stay forward-compatible) bu
 ```bash
 cargo test --workspace                                  # ~1s, no root needed
 cargo test -p torana-core --features plugins             # WASM sandbox tests (needs wasm32-unknown-unknown)
+cargo test -p torana --features acme                     # HTTP/2 + ACME config/unit tests
+./scripts/test-acme-e2e.sh                                # real ACME issuance against local Pebble (needs Docker)
 cargo clippy --workspace --all-targets -- -D warnings
 cargo clippy -p torana-core --all-targets --features plugins -- -D warnings
+cargo clippy -p torana-core --all-targets --features acme -- -D warnings
 cargo fmt --all --check
 ```
 
-Integration tests spawn real proxy processes against in-process backends on random ports, so they run in parallel and touch nothing outside the test.
+Integration tests spawn real proxy processes against in-process backends on random ports, so they run in parallel and touch nothing outside the test. The ACME end-to-end test goes further: it runs against a real ACME protocol server ([Pebble](https://github.com/letsencrypt/pebble), Let's Encrypt's own test implementation) and cryptographically verifies the served certificate's chain against Pebble's actual issuing root — not a mock, and not just "a response came back."
 
 - [Benchmarking](bench/README.md) — Docker harness comparing torana against Caddy and nginx, with sample results
 - [v0.1 design notes](docs/plans/2026-04-11-torana-v0.1-implementation.md)
 
 ## Relationship to Caddy
 
-torana is **not** affiliated with or a replacement for [Caddy](https://caddyserver.com). Caddy is a mature, batteries-included web server with automatic HTTPS and a large plugin ecosystem. torana explores a different corner of the design space: the smallest useful reverse proxy for containers and edge nodes, where a small static binary, fast cold start, and a genuinely sandboxed extension mechanism matter more than a large feature surface.
+torana is **not** affiliated with or a replacement for [Caddy](https://caddyserver.com). Caddy is a mature, batteries-included web server with a large plugin ecosystem and years of production hardening. torana now also does automatic HTTPS via ACME, but as an opt-in feature on a much smaller binary, not the zero-configuration default Caddy is designed around. torana explores a different corner of the design space: the smallest useful reverse proxy for containers and edge nodes, where a small static binary, fast cold start, and a genuinely sandboxed extension mechanism matter more than a large feature surface.
 
 ## License
 

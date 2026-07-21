@@ -406,6 +406,127 @@ upstream = [{{ addr = "http://127.0.0.1:{backend_port}" }}]
 }
 
 #[test]
+fn http2_is_negotiated_over_tls_and_proxies_correctly() {
+    let backend_port = spawn_backend("h2 backend");
+
+    let dir = tempdir::TempDir::new();
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let cert_path = dir.path().join("tls.crt");
+    let key_path = dir.path().join("tls.key");
+    std::fs::write(&cert_path, cert.cert.pem()).unwrap();
+    std::fs::write(&key_path, cert.key_pair.serialize_pem()).unwrap();
+
+    let (_proxy, listen_port, _) = start_proxy(|listen_port, metrics_port| {
+        format!(
+            r#"
+[global]
+log_level = "error"
+metrics_addr = "127.0.0.1:{metrics_port}"
+
+[[listener]]
+addr = "127.0.0.1:{listen_port}"
+protocol = "https"
+tls_cert = "{cert_path}"
+tls_key = "{key_path}"
+
+[[route]]
+name = "default"
+upstream = [{{ addr = "http://127.0.0.1:{backend_port}" }}]
+"#,
+            metrics_port = metrics_port,
+            listen_port = listen_port,
+            cert_path = cert_path.display(),
+            key_path = key_path.display(),
+            backend_port = backend_port,
+        )
+    });
+
+    // reqwest negotiates h2 automatically via ALPN over TLS when the server
+    // offers it — no special client flag needed, which is exactly the
+    // real-world case (browsers do the same).
+    let client = reqwest::blocking::Client::builder()
+        .use_rustls_tls()
+        .danger_accept_invalid_certs(true)
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+
+    // Several requests on what reqwest should keep as one pooled h2
+    // connection, proving negotiation isn't a first-request fluke and that
+    // the h1-upstream translation is consistently correct.
+    for i in 0..3 {
+        let response = client
+            .get(format!("https://127.0.0.1:{}/", listen_port))
+            .send()
+            .unwrap_or_else(|e| panic!("request {} failed: {}", i, e));
+        assert_eq!(
+            response.version(),
+            reqwest::Version::HTTP_2,
+            "request {} did not negotiate h2",
+            i
+        );
+        assert_eq!(response.status(), 200);
+        assert_eq!(response.text().unwrap(), "h2 backend");
+    }
+}
+
+#[test]
+fn http1_client_still_works_on_the_same_h2_capable_listener() {
+    let backend_port = spawn_backend("h1 backend");
+
+    let dir = tempdir::TempDir::new();
+    let cert = rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+    let cert_path = dir.path().join("tls.crt");
+    let key_path = dir.path().join("tls.key");
+    std::fs::write(&cert_path, cert.cert.pem()).unwrap();
+    std::fs::write(&key_path, cert.key_pair.serialize_pem()).unwrap();
+
+    let (_proxy, listen_port, _) = start_proxy(|listen_port, metrics_port| {
+        format!(
+            r#"
+[global]
+log_level = "error"
+metrics_addr = "127.0.0.1:{metrics_port}"
+
+[[listener]]
+addr = "127.0.0.1:{listen_port}"
+protocol = "https"
+tls_cert = "{cert_path}"
+tls_key = "{key_path}"
+
+[[route]]
+name = "default"
+upstream = [{{ addr = "http://127.0.0.1:{backend_port}" }}]
+"#,
+            metrics_port = metrics_port,
+            listen_port = listen_port,
+            cert_path = cert_path.display(),
+            key_path = key_path.display(),
+            backend_port = backend_port,
+        )
+    });
+
+    // A client that only ever offers http/1.1 via ALPN must still be served
+    // http/1.1 — the same listener serves both based on what each
+    // connection negotiates.
+    let client = reqwest::blocking::Client::builder()
+        .use_rustls_tls()
+        .danger_accept_invalid_certs(true)
+        .http1_only()
+        .timeout(Duration::from_secs(5))
+        .build()
+        .unwrap();
+
+    let response = client
+        .get(format!("https://127.0.0.1:{}/", listen_port))
+        .send()
+        .expect("http/1.1-only request failed");
+    assert_eq!(response.version(), reqwest::Version::HTTP_11);
+    assert_eq!(response.status(), 200);
+    assert_eq!(response.text().unwrap(), "h1 backend");
+}
+
+#[test]
 fn mtls_requires_and_forwards_verified_client_cert() {
     use rcgen::{BasicConstraints, CertificateParams, IsCa, KeyPair};
 

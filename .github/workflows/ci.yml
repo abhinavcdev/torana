@@ -20,6 +20,8 @@ jobs:
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo clippy -p torana-core --all-targets --features plugins -- -D warnings
+      - run: cargo clippy -p torana-core --all-targets --features acme -- -D warnings
+      - run: cargo clippy -p torana --all-targets --features acme -- -D warnings
 
   test:
     strategy:
@@ -34,6 +36,15 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --all-targets
       - run: cargo test -p torana-core --features plugins
+      - run: cargo test -p torana --features acme
+
+  acme-e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: ./scripts/test-acme-e2e.sh
 
   audit:
     runs-on: ubuntu-latest

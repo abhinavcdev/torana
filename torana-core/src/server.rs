@@ -317,10 +317,15 @@ fn build_request(
     parts: &hyper::http::request::Parts,
     body: proxy::UpstreamBody,
 ) -> Request<proxy::UpstreamBody> {
+    // The upstream leg always speaks HTTP/1.1, regardless of what the
+    // client negotiated (h2 clients are common; h2 upstreams are not, and
+    // this proxy doesn't support them). Copying the client's HTTP/2
+    // version through would make hyper-util's http1-only upstream client
+    // correctly refuse to send it (`UserUnsupportedVersion`).
     let mut builder = Request::builder()
         .method(parts.method.clone())
         .uri(parts.uri.clone())
-        .version(parts.version);
+        .version(hyper::Version::HTTP_11);
     if let Some(headers) = builder.headers_mut() {
         *headers = parts.headers.clone();
     }
@@ -387,6 +392,15 @@ impl Server {
         let config = self.config;
         tracing::info!("torana starting");
 
+        // rustls 0.23 refuses to auto-select a crypto provider when more
+        // than one is compiled into the process (our own dependency pins
+        // "ring" explicitly, but other crates in the graph can still pull
+        // in "aws-lc-rs"). Install ours up front so a fresh ambiguity
+        // introduced by some future dependency fails loudly in tests
+        // rather than at a customer's first HTTPS request. Err just means
+        // a provider was already installed, which is fine.
+        let _ = rustls::crypto::ring::default_provider().install_default();
+
         let (metrics, registry) = init_metrics()?;
         let metrics = Arc::new(metrics);
         let engine = ProxyEngine::new(config.clone(), metrics.clone());
@@ -423,7 +437,30 @@ impl Server {
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to bind {}: {}", addr, e))?;
 
-            if listener_cfg.protocol == "https" {
+            if listener_cfg.acme.is_some() {
+                #[cfg(feature = "acme")]
+                {
+                    let acme_cfg = listener_cfg.acme.as_ref().expect("validated");
+                    let handle = crate::acme::build(
+                        acme_cfg.domains.clone(),
+                        acme_cfg.contact_emails.clone().unwrap_or_default(),
+                        acme_cfg.cache_dir().to_string(),
+                        acme_cfg.directory_url.clone(),
+                        acme_cfg.staging.unwrap_or(false),
+                        acme_cfg.ca_cert.clone(),
+                    )?;
+                    tracing::info!(domains = ?acme_cfg.domains, "ACME-managed HTTPS listener started on {}", addr);
+                    tokio::spawn(crate::acme::drive(handle.state));
+                    tokio::spawn(run_acme_listener(
+                        tcp,
+                        handle.acceptor,
+                        handle.rustls_config,
+                        handler.clone(),
+                    ));
+                }
+                #[cfg(not(feature = "acme"))]
+                unreachable!("validated: acme requires --features acme");
+            } else if listener_cfg.protocol == "https" {
                 let cert_path = listener_cfg.tls_cert.clone().expect("validated");
                 let key_path = listener_cfg.tls_key.clone().expect("validated");
                 let acceptor = tls::load_tls_config(
@@ -522,27 +559,73 @@ async fn run_listener(
                             .peer_certificates()
                             .and_then(|certs| certs.first())
                             .map(|cert| tls::cert_fingerprint(cert.as_ref()));
+                        let use_h2 = tls_stream.get_ref().1.alpn_protocol() == Some(b"h2");
                         serve_connection(
                             hyper_util::rt::TokioIo::new(tls_stream),
                             peer,
                             "https",
                             handler,
                             client_cert_fingerprint,
+                            use_h2,
                         )
                         .await
                     }
                     Err(e) => tracing::debug!("TLS handshake failed: {}", e),
                 },
                 None => {
+                    // No TLS means no ALPN, so no negotiated h2; cleartext
+                    // http/2 (h2c) is deliberately not supported.
                     serve_connection(
                         hyper_util::rt::TokioIo::new(stream),
                         peer,
                         "http",
                         handler,
                         None,
+                        false,
                     )
                     .await
                 }
+            }
+        });
+    }
+}
+
+#[cfg(feature = "acme")]
+async fn run_acme_listener(
+    listener: tokio::net::TcpListener,
+    acceptor: rustls_acme::AcmeAcceptor,
+    rustls_config: Arc<rustls_acme::rustls::ServerConfig>,
+    handler: ConnHandler,
+) {
+    use tokio_util::compat::TokioAsyncReadCompatExt;
+
+    let mut accept_shutdown = handler.shutdown_rx.clone();
+    loop {
+        let (stream, peer) = tokio::select! {
+            conn = accept_or_retry(&listener) => conn,
+            _ = accept_shutdown.changed() => break,
+        };
+        let acceptor = acceptor.clone();
+        let rustls_config = rustls_config.clone();
+        let handler = handler.clone();
+
+        tokio::spawn(async move {
+            match crate::acme::accept(&acceptor, stream.compat(), rustls_config).await {
+                Ok(Some(accepted)) => {
+                    // ACME listeners don't support mTLS (validated at
+                    // startup), so there is never a client cert fingerprint.
+                    serve_connection(
+                        hyper_util::rt::TokioIo::new(accepted.stream),
+                        peer,
+                        "https",
+                        handler,
+                        None,
+                        accepted.use_h2,
+                    )
+                    .await
+                }
+                Ok(None) => {} // TLS-ALPN-01 validation traffic, handled internally
+                Err(e) => tracing::debug!("ACME TLS handshake failed: {}", e),
             }
         });
     }
@@ -554,6 +637,7 @@ async fn serve_connection<I>(
     proto: &'static str,
     handler: ConnHandler,
     client_cert_fingerprint: Option<String>,
+    use_h2: bool,
 ) where
     I: hyper::rt::Read + hyper::rt::Write + Unpin + Send + 'static,
 {
@@ -570,19 +654,37 @@ async fn serve_connection<I>(
         }
     });
 
-    let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, service);
-    let mut conn = std::pin::pin!(conn);
-
-    tokio::select! {
-        result = conn.as_mut() => {
-            if let Err(e) = result {
-                tracing::debug!("Connection error: {}", e);
+    if use_h2 {
+        let conn = hyper::server::conn::http2::Builder::new(hyper_util::rt::TokioExecutor::new())
+            .serve_connection(io, service);
+        let mut conn = std::pin::pin!(conn);
+        tokio::select! {
+            result = conn.as_mut() => {
+                if let Err(e) = result {
+                    tracing::debug!("h2 connection error: {}", e);
+                }
+            }
+            _ = conn_shutdown.changed() => {
+                conn.as_mut().graceful_shutdown();
+                if let Err(e) = conn.as_mut().await {
+                    tracing::debug!("h2 connection error during drain: {}", e);
+                }
             }
         }
-        _ = conn_shutdown.changed() => {
-            conn.as_mut().graceful_shutdown();
-            if let Err(e) = conn.as_mut().await {
-                tracing::debug!("Connection error during drain: {}", e);
+    } else {
+        let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, service);
+        let mut conn = std::pin::pin!(conn);
+        tokio::select! {
+            result = conn.as_mut() => {
+                if let Err(e) = result {
+                    tracing::debug!("Connection error: {}", e);
+                }
+            }
+            _ = conn_shutdown.changed() => {
+                conn.as_mut().graceful_shutdown();
+                if let Err(e) = conn.as_mut().await {
+                    tracing::debug!("Connection error during drain: {}", e);
+                }
             }
         }
     }

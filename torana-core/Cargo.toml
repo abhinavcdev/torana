@@ -13,7 +13,7 @@ hyper = { version = "1.4", features = ["full"] }
 hyper-util = { version = "0.1", features = ["tokio", "client-legacy", "http1"] }
 http-body-util = "0.1"
 bytes = "1.5"
-rustls = { version = "0.23", features = ["std", "ring"] }
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
 rustls-pemfile = "2.1"
 tokio-rustls = "0.25"
 ring = "0.17"
@@ -25,11 +25,17 @@ prometheus = "0.13"
 thiserror = "1.0"
 anyhow = "1.0"
 wasmtime = { version = "26", optional = true }
+rustls-acme = { version = "0.15", default-features = false, features = ["ring", "tokio", "webpki-roots"], optional = true }
+tokio-util = { version = "0.7", features = ["compat"], optional = true }
+futures = { version = "0.3", optional = true }
 
 [features]
 # Off by default: wasmtime adds several MB and a Cranelift dependency, which
 # conflicts with torana's small-binary story. Opt in with --features plugins.
 plugins = ["dep:wasmtime"]
+# Off by default: pulls in a second ACME-flavored dependency tree. Opt in
+# with --features acme.
+acme = ["dep:rustls-acme", "dep:tokio-util", "dep:futures"]
 
 [dev-dependencies]
 rcgen = "0.13"

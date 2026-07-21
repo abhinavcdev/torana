@@ -387,8 +387,8 @@
 
 <div class="wrap">
   <div class="stats" role="list" aria-label="Key numbers">
-    <div class="stat" role="listitem"><b>4.8&nbsp;MB</b><span>docker image</span></div>
-    <div class="stat" role="listitem"><b>4.8&nbsp;MiB</b><span>idle memory</span></div>
+    <div class="stat" role="listitem"><b>5.5&nbsp;MB</b><span>docker image</span></div>
+    <div class="stat" role="listitem"><b>5.5&nbsp;MiB</b><span>idle memory</span></div>
     <div class="stat" role="listitem"><b>5,276</b><span>req/s · caddy 4,510</span></div>
     <div class="stat" role="listitem"><b>31&nbsp;ms</b><span>p99 · caddy 29</span></div>
   </div>
@@ -450,7 +450,7 @@
       <div>
         <p class="col-label">Shipping today</p>
         <ul class="plain-list">
-          <li><span class="tick">✓</span><span>HTTP/1.1 proxying with fully streamed bodies — no buffering</span></li>
+          <li><span class="tick">✓</span><span>HTTP/1.1 and HTTP/2 (client-facing) with fully streamed bodies — no buffering</span></li>
           <li><span class="tick">✓</span><span>Host- and path-based routing across multiple routes, first match wins</span></li>
           <li><span class="tick">✓</span><span>TLS termination with rustls; pure Rust, no OpenSSL</span></li>
           <li><span class="tick">✓</span><span>Upstream keep-alive pooling, TCP_NODELAY on both legs</span></li>
@@ -466,16 +466,17 @@
           <li><span class="tick">✓</span><span>Header rewriting — request/response overrides, empty value removes a header</span></li>
           <li><span class="tick">✓</span><span>Traffic mirroring — sample GET/HEAD/OPTIONS traffic to a second upstream</span></li>
           <li><span class="tick">✓</span><span>mTLS — mandatory client certs, verified fingerprint forwarded, never spoofable</span></li>
+          <li><span class="tick">✓</span><span>Automatic HTTPS via ACME, opt-in — RFC 8555, TLS-ALPN-01, Let's Encrypt or a private CA</span></li>
           <li><span class="tick">✓</span><span>Embeddable — the engine is a separate crate usable inside your own server</span></li>
         </ul>
       </div>
       <div>
         <p class="col-label">On the roadmap</p>
         <ul class="plain-list">
-          <li><span class="tick no">—</span><span>HTTP/2 and HTTP/3</span></li>
-          <li><span class="tick no">—</span><span>TLS to upstreams (https:// upstreams are rejected, not faked)</span></li>
+          <li><span class="tick no">—</span><span>HTTP/3</span></li>
+          <li><span class="tick no">—</span><span>HTTP/2 or TLS to upstreams — the proxy-to-upstream leg is always plain HTTP/1.1</span></li>
           <li><span class="tick no">—</span><span>Circuit breaking — retries and health checks exist; a faster-ejecting breaker doesn't yet</span></li>
-          <li><span class="tick no">—</span><span>Automatic HTTPS — use <a href="https://caddyserver.com">Caddy</a> if you want managed certs</span></li>
+          <li><span class="tick no">—</span><span>mTLS combined with ACME on the same listener</span></li>
         </ul>
       </div>
     </div>
@@ -491,11 +492,11 @@
       <div class="case"><span class="tag">Edge</span><h3>Routers, Pis, and edge boxes</h3><p>A real reverse proxy on hardware where RAM is measured in megabytes and every binary ships over a slow link.</p></div>
       <div class="case"><span class="tag">Cold start</span><h3>Scale-to-zero platforms</h3><p>Millisecond startup means the proxy is never the reason your function's cold start got slower.</p></div>
       <div class="case"><span class="tag">Canary</span><h3>Weighted rollouts</h3><p>Send 5% of traffic to the new build with two lines of TOML and a SIGHUP — no orchestration required.</p></div>
-      <div class="case"><span class="tag">Compose</span><h3>docker-compose front doors</h3><p>One 4.7&nbsp;MB scratch image routes your whole dev stack. Smaller than most base images' package index.</p></div>
+      <div class="case"><span class="tag">Compose</span><h3>docker-compose front doors</h3><p>One 5.5&nbsp;MB scratch image routes your whole dev stack. Smaller than most base images' package index.</p></div>
       <div class="case"><span class="tag">Metrics</span><h3>Instrumenting legacy services</h3><p>Put Prometheus request metrics in front of the service nobody dares recompile.</p></div>
       <div class="case"><span class="tag">Dev TLS</span><h3>Local HTTPS</h3><p>Terminate a self-signed cert in front of any dev server. One script generates the pair.</p></div>
       <div class="case"><span class="tag">Air-gapped</span><h3>Locked-down environments</h3><p>A single auditable binary, memory-safe Rust, rustls, and no dynamic config API to attack. Reload is a Unix signal.</p></div>
-      <div class="case"><span class="tag">CI</span><h3>Integration test fixtures</h3><p>Spin up a real proxy per test on a random port. torana's own suite runs 54 tests in about a second.</p></div>
+      <div class="case"><span class="tag">CI</span><h3>Integration test fixtures</h3><p>Spin up a real proxy per test on a random port. torana's own suite runs 62 tests in about a second.</p></div>
       <div class="case"><span class="tag">Appliance</span><h3>Embedded products</h3><p>Ship a proxy inside kiosks, appliances, and firmware images where every megabyte reaches a customer.</p></div>
     </div>
   </section>
@@ -555,6 +556,7 @@ total = <span class="ac">"30s"</span></pre>
       <a href="#docs-quickstart">Quick start</a>
       <div class="dn-label">Reference</div>
       <a href="#docs-config">Configuration</a>
+      <a href="#docs-acme">HTTP/2 &amp; automatic HTTPS</a>
       <a href="#docs-embed">Using it as a library</a>
       <a href="#docs-signals">Signals &amp; reloads</a>
       <a href="#docs-observability">Observability</a>
@@ -589,7 +591,7 @@ torana-v0.4.0-x86_64-unknown-linux-musl.tar.gz | tar xz
 ./torana --config torana.toml</pre>
         </div>
         <h3>Docker</h3>
-        <p>The repo Dockerfile builds a static musl binary into a <code>FROM scratch</code> image — 4.7&nbsp;MB total:</p>
+        <p>The repo Dockerfile builds a static musl binary into a <code>FROM scratch</code> image — 5.3&nbsp;MB total:</p>
         <div class="code-card">
           <div class="code-head"><span>docker</span><button class="copy-btn" data-copy="docker build -t torana https://github.com/abhinavcdev/torana.git&#10;docker run -p 8080:8080 -v $PWD/torana.toml:/etc/torana/torana.toml torana">copy</button></div>
           <pre>docker build -t torana https://github.com/abhinavcdev/torana.git
@@ -649,8 +651,10 @@ tls_key = <span class="ac">"./certs/tls.key"</span></pre>
               <tr><td><code>global.workers</code></td><td><span class="pill off">ignored</span></td><td class="td-note">Tokio sizes its own thread pool</td></tr>
               <tr><td><code>listener.addr</code></td><td><span class="pill on">enforced</span></td><td class="td-note">socket address; binds fail fast at startup</td></tr>
               <tr><td><code>listener.protocol</code></td><td><span class="pill on">enforced</span></td><td class="td-note">http or https</td></tr>
-              <tr><td><code>listener.tls_cert / tls_key</code></td><td><span class="pill on">enforced</span></td><td class="td-note">PEM paths, required when protocol = https</td></tr>
-              <tr><td><code>listener.tls_client_ca</code></td><td><span class="pill on">enforced</span></td><td class="td-note">mTLS — CA PEM path; client certs become mandatory</td></tr>
+              <tr><td><code>listener.tls_cert / tls_key</code></td><td><span class="pill on">enforced</span></td><td class="td-note">PEM paths; required when protocol = https unless acme is set</td></tr>
+              <tr><td><code>listener.tls_client_ca</code></td><td><span class="pill on">enforced</span></td><td class="td-note">mTLS — CA PEM path; client certs become mandatory; not combinable with acme</td></tr>
+              <tr><td><code>listener.acme.domains/contact_emails/cache_dir</code></td><td><span class="pill on">enforced*</span></td><td class="td-note">automatic HTTPS, RFC 8555 — *needs <code>--features acme</code></td></tr>
+              <tr><td><code>listener.acme.directory_url/staging/ca_cert</code></td><td><span class="pill on">enforced*</span></td><td class="td-note">target a private ACME server or LE staging — *needs <code>--features acme</code></td></tr>
               <tr><td><code>route.name</code></td><td><span class="pill on">enforced</span></td><td class="td-note">identifier used in logs and metrics</td></tr>
               <tr><td><code>route.host</code></td><td><span class="pill on">enforced</span></td><td class="td-note">exact hostname, or "*.example.com" for subdomains; unset matches any host</td></tr>
               <tr><td><code>route.path</code></td><td><span class="pill on">enforced</span></td><td class="td-note">prefix match on segment boundaries; unset matches any path</td></tr>
@@ -694,7 +698,7 @@ upstream = [{ addr = <span class="ac">"http://127.0.0.1:4000"</span> }]</pre>
         <h3>Retries</h3>
         <p>Only <code>GET</code>, <code>HEAD</code>, and <code>OPTIONS</code> requests with an empty body are retried, and only on a connect-level failure — a request that reached the upstream is never retried, so a non-idempotent request is never double-executed. Retried attempts skip upstreams already tried this request and prefer upstreams the health check considers up.</p>
         <h3>Sandboxed WASM plugins</h3>
-        <p>Build with <code>cargo build --release --features plugins</code> (off by default — wasmtime's Cranelift JIT roughly doubles the binary, from ~4.6&nbsp;MB to ~11&nbsp;MB). A plugin is a WASM module exporting <code>memory</code>, <code>alloc(len) -&gt; ptr</code>, and <code>on_request(method_ptr, method_len, path_ptr, path_len) -&gt; i32</code>: return <code>0</code> to allow, a code in <code>400..600</code> to deny with that status, anything else denies with <code>403</code>. No host functions are exposed — a plugin cannot reach the filesystem, network, or process; wasmtime's sandbox is the entire boundary, and every call runs under a fuel limit so a runaway loop is denied with <code>500</code> instead of hanging the request.</p>
+        <p>Build with <code>cargo build --release --features plugins</code> (off by default — wasmtime's Cranelift JIT roughly doubles the binary, from ~5.3&nbsp;MB to ~12&nbsp;MB). A plugin is a WASM module exporting <code>memory</code>, <code>alloc(len) -&gt; ptr</code>, and <code>on_request(method_ptr, method_len, path_ptr, path_len) -&gt; i32</code>: return <code>0</code> to allow, a code in <code>400..600</code> to deny with that status, anything else denies with <code>403</code>. No host functions are exposed — a plugin cannot reach the filesystem, network, or process; wasmtime's sandbox is the entire boundary, and every call runs under a fuel limit so a runaway loop is denied with <code>500</code> instead of hanging the request.</p>
         <div class="code-card">
           <div class="code-head"><span>attach a plugin to a route</span><button class="copy-btn" data-copy='[[route]]&#10;name = "api"&#10;plugin = "./plugins/auth-filter.wasm"&#10;upstream = [{ addr = "http://127.0.0.1:3000" }]'>copy</button></div>
           <pre><span class="cm">[[route]]</span>
@@ -729,6 +733,27 @@ tls_cert = <span class="ac">"./certs/server.crt"</span>
 tls_key = <span class="ac">"./certs/server.key"</span>
 tls_client_ca = <span class="ac">"./certs/ca.crt"</span></pre>
         </div>
+      </section>
+
+      <section id="docs-acme">
+        <h2>HTTP/2 &amp; automatic HTTPS</h2>
+        <h3>HTTP/2</h3>
+        <p>HTTPS listeners negotiate h2 automatically via ALPN — h2 offered first, falling back to http/1.1 on the same listener for clients that don't support it. Nothing to configure, and not feature-gated: hyper already ships the h2 builder. The proxy-to-upstream leg is always HTTP/1.1 regardless of what the client negotiated — forwarding the client's HTTP version through to an http/1.1-only upstream client doesn't work, which is exactly the bug torana's own h2 integration test caught during development.</p>
+        <h3>Automatic HTTPS via ACME</h3>
+        <p>Build with <code>cargo build --release --features acme</code> (off by default — adds ~1.6&nbsp;MB via <code>rustls-acme</code>, which carries its own rustls stack internally). <code>listener.acme</code> replaces a static <code>tls_cert</code>/<code>tls_key</code> pair; certificates are obtained and renewed automatically via RFC 8555 using the TLS-ALPN-01 challenge, no separate port 80 listener needed. Not combinable with <code>tls_client_ca</code> (mTLS) on the same listener yet.</p>
+        <div class="code-card">
+          <div class="code-head"><span>automatic HTTPS</span><button class="copy-btn" data-copy='[[listener]]&#10;addr = "0.0.0.0:443"&#10;protocol = "https"&#10;&#10;[listener.acme]&#10;domains = ["example.com"]&#10;contact_emails = ["admin@example.com"]&#10;cache_dir = "./acme-cache"&#10;# staging = true   # use while testing'>copy</button></div>
+          <pre><span class="cm">[[listener]]</span>
+addr = <span class="ac">"0.0.0.0:443"</span>
+protocol = <span class="ac">"https"</span>
+
+<span class="cm">[listener.acme]</span>
+domains = [<span class="ac">"example.com"</span>]
+contact_emails = [<span class="ac">"admin@example.com"</span>]
+cache_dir = <span class="ac">"./acme-cache"</span>
+<span class="cm"># staging = true   # use Let's Encrypt's staging directory while testing</span></pre>
+        </div>
+        <p><code>directory_url</code> targets a private ACME server instead of Let's Encrypt, and <code>ca_cert</code> trusts that server's CA if it isn't in the public web PKI — exactly how torana's own end-to-end test verifies against a local <a href="https://github.com/letsencrypt/pebble">Pebble</a> instance (Let's Encrypt's own ACME protocol test server) rather than a mock. That test proves a genuine RFC 8555 issuance occurred by checking the served certificate's chain against Pebble's real issuing root, with a negative control confirming the same request fails TLS verification without that trust anchor — see <code>scripts/test-acme-e2e.sh</code> and <code>torana/tests/acme_e2e.rs</code>.</p>
       </section>
 
       <section id="docs-embed">
@@ -862,7 +887,7 @@ docker compose -f bench/docker-compose.yml down</pre>
 
       <section id="docs-roadmap">
         <h2>Roadmap</h2>
-        <p>Route matching, active health checks, connect retries, and a sandboxed WASM plugin hook shipped in 0.4; header rewriting, traffic mirroring, and mTLS shipped in 0.5. In rough priority order from here: HTTP/2 (client-facing and upstream), TLS to upstreams, and a circuit breaker that ejects a flapping upstream faster than health checks alone. Automatic HTTPS / ACME is deliberately not planned — it would blur the line against Caddy, which already does this well. The config schema reserves fields for what's left, so configs written today keep working.</p>
+        <p>Route matching, active health checks, connect retries, and a sandboxed WASM plugin hook shipped in 0.4; header rewriting, traffic mirroring, and mTLS shipped in 0.5; client-facing HTTP/2 and automatic HTTPS via ACME shipped in 0.6. In rough priority order from here: HTTP/3, HTTP/2 and TLS to upstreams, and a circuit breaker that ejects a flapping upstream faster than health checks alone. The config schema reserves fields for what's left, so configs written today keep working.</p>
         <p>If one of these matters to you, <a href="https://github.com/abhinavcdev/torana/issues">open an issue</a> — early-stage projects reorder roadmaps for real users.</p>
       </section>
     </div>

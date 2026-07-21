@@ -24,6 +24,35 @@ pub struct ListenerConfig {
     pub tls_cert: Option<String>,
     pub tls_key: Option<String>,
     pub tls_client_ca: Option<String>,
+    /// Automatic HTTPS via ACME (RFC 8555), instead of a static
+    /// tls_cert/tls_key pair. Requires building with `--features acme`.
+    /// Not combinable with tls_client_ca (mTLS) in this version.
+    pub acme: Option<AutoTlsConfig>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AutoTlsConfig {
+    pub domains: Vec<String>,
+    pub contact_emails: Option<Vec<String>>,
+    /// Where issued certificates/account keys are cached. Default
+    /// "./acme-cache".
+    pub cache_dir: Option<String>,
+    /// Overrides the ACME directory URL entirely (e.g. a local test server
+    /// like Pebble). Takes priority over `staging` when both are set.
+    pub directory_url: Option<String>,
+    /// Use Let's Encrypt's staging directory (untrusted test certs, no
+    /// meaningful rate limits) instead of production. Default false.
+    pub staging: Option<bool>,
+    /// Trust this CA (PEM) when connecting to the ACME directory itself —
+    /// for a private/internal ACME server, or a local test server like
+    /// Pebble. The public web PKI roots are trusted when unset.
+    pub ca_cert: Option<String>,
+}
+
+impl AutoTlsConfig {
+    pub fn cache_dir(&self) -> &str {
+        self.cache_dir.as_deref().unwrap_or("./acme-cache")
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -168,15 +197,61 @@ impl Config {
                 .parse::<std::net::SocketAddr>()
                 .map_err(|e| anyhow::anyhow!("Invalid listener addr '{}': {}", listener.addr, e))?;
             match listener.protocol.as_str() {
-                "http" => {}
-                "https" => {
-                    if listener.tls_cert.is_none() || listener.tls_key.is_none() {
+                "http" => {
+                    if listener.acme.is_some() {
                         anyhow::bail!(
-                            "HTTPS listener {} requires tls_cert and tls_key",
+                            "listener {}: acme requires protocol = \"https\"",
                             listener.addr
                         );
                     }
                 }
+                "https" => match &listener.acme {
+                    Some(acme) => {
+                        if listener.tls_cert.is_some() || listener.tls_key.is_some() {
+                            anyhow::bail!(
+                                "listener {}: acme is mutually exclusive with tls_cert/tls_key",
+                                listener.addr
+                            );
+                        }
+                        if listener.tls_client_ca.is_some() {
+                            anyhow::bail!(
+                                "listener {}: acme combined with tls_client_ca (mTLS) is not \
+                                 supported yet",
+                                listener.addr
+                            );
+                        }
+                        if acme.domains.is_empty() {
+                            anyhow::bail!(
+                                "listener {}: acme.domains must list at least one domain",
+                                listener.addr
+                            );
+                        }
+                        if let Some(url) = &acme.directory_url {
+                            url.parse::<hyper::Uri>().map_err(|e| {
+                                anyhow::anyhow!(
+                                    "listener {}: invalid acme.directory_url: {}",
+                                    listener.addr,
+                                    e
+                                )
+                            })?;
+                        }
+                        if cfg!(not(feature = "acme")) {
+                            anyhow::bail!(
+                                "listener {}: acme is set but this build was compiled without \
+                                 --features acme",
+                                listener.addr
+                            );
+                        }
+                    }
+                    None => {
+                        if listener.tls_cert.is_none() || listener.tls_key.is_none() {
+                            anyhow::bail!(
+                                "HTTPS listener {} requires tls_cert and tls_key (or an acme block)",
+                                listener.addr
+                            );
+                        }
+                    }
+                },
                 other => anyhow::bail!(
                     "Unsupported listener protocol '{}' (expected \"http\" or \"https\")",
                     other
@@ -400,6 +475,80 @@ mod tests {
         let mut config = minimal_config("http://127.0.0.1:9000");
         config.listener[0].tls_client_ca = Some("./ca.pem".into());
         assert!(config.validate().is_err());
+    }
+
+    fn acme_config(domains: &[&str]) -> AutoTlsConfig {
+        AutoTlsConfig {
+            domains: domains.iter().map(|s| s.to_string()).collect(),
+            contact_emails: None,
+            cache_dir: None,
+            directory_url: None,
+            staging: Some(true),
+            ca_cert: None,
+        }
+    }
+
+    #[test]
+    fn acme_requires_https_protocol() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.listener[0].acme = Some(acme_config(&["example.com"]));
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn acme_rejects_empty_domains() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.listener[0].protocol = "https".into();
+        config.listener[0].acme = Some(acme_config(&[]));
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn acme_mutually_exclusive_with_static_cert() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.listener[0].protocol = "https".into();
+        config.listener[0].tls_cert = Some("./tls.crt".into());
+        config.listener[0].tls_key = Some("./tls.key".into());
+        config.listener[0].acme = Some(acme_config(&["example.com"]));
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn acme_mutually_exclusive_with_mtls() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.listener[0].protocol = "https".into();
+        config.listener[0].tls_client_ca = Some("./ca.pem".into());
+        config.listener[0].acme = Some(acme_config(&["example.com"]));
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn acme_rejects_invalid_directory_url() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.listener[0].protocol = "https".into();
+        let mut acme = acme_config(&["example.com"]);
+        acme.directory_url = Some("not a url".into());
+        config.listener[0].acme = Some(acme);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    #[cfg(feature = "acme")]
+    fn acme_valid_config_passes_with_feature_enabled() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.listener[0].protocol = "https".into();
+        config.listener[0].acme = Some(acme_config(&["example.com"]));
+        config.validate().unwrap();
+    }
+
+    #[test]
+    #[cfg(not(feature = "acme"))]
+    fn acme_valid_config_rejected_without_feature() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.listener[0].protocol = "https".into();
+        config.listener[0].acme = Some(acme_config(&["example.com"]));
+        let err = config.validate().unwrap_err().to_string();
+        assert!(err.contains("--features acme"), "unexpected error: {}", err);
     }
 
     #[test]

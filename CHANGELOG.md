@@ -6,6 +6,61 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-07-21
+
+### Added
+
+- **HTTP/2 (client-facing)**: HTTPS listeners now negotiate h2 via ALPN
+  (offered first, falling back to http/1.1) and serve it with hyper's h2
+  server. The proxy-to-upstream leg always speaks HTTP/1.1 regardless of
+  what the client negotiated — this proxy doesn't support HTTP/2 upstreams,
+  and forwarding the client's negotiated version to an http/1.1-only
+  upstream client would be (and, during development, briefly was) a
+  `UserUnsupportedVersion` error. Not feature-gated: hyper already ships
+  the h2 builder, so this is part of the default build.
+- **Automatic HTTPS via ACME** (RFC 8555, TLS-ALPN-01), behind a new opt-in
+  `acme` Cargo feature (off by default — adds ~1.6 MB via `rustls-acme`
+  and its dependency tree, a second-generation rustls stack it carries
+  internally). `listener.acme` replaces a static `tls_cert`/`tls_key` pair
+  with `domains`, an optional `contact_emails` list, `cache_dir` for
+  issued certs and account keys, and `directory_url`/`staging` to target
+  Let's Encrypt's staging directory or a private/test ACME server.
+  `ca_cert` lets the ACME client trust a private CA when connecting to the
+  directory itself — for an internal ACME server, or a local test server
+  like Pebble. Not combinable with `tls_client_ca` (mTLS) in this version.
+  Certificate issuance and renewal run in a background task; the TLS
+  handshake for real traffic completes once a certificate is available,
+  handled through the same per-listener accept loop as static-cert and
+  mTLS listeners.
+
+### Fixed
+
+- rustls 0.23 was refusing to auto-select a crypto provider at the first
+  HTTPS handshake once a second dependency (rustls-acme, via
+  `futures-rustls`) exercised the ambiguity: this crate's own `rustls`
+  dependency never set `default-features = false`, so rustls's default
+  feature set (pulling in `aws-lc-rs`) had been additively enabled
+  alongside the explicit `ring` feature all along, without ever being
+  triggered. Fixed at the source (`default-features = false` on the
+  `rustls` dependency) plus a defensive explicit `install_default()` call
+  at startup.
+
+### Testing
+
+Both new features are verified with genuine protocol-level end-to-end
+tests, not synthetic load tools: an HTTP/2 test asserts the negotiated
+protocol version via a real client and proxies several requests over one
+pooled h2 connection to an http/1.1 backend; a same-listener HTTP/1.1
+test proves the fallback path still works. The ACME feature is verified
+against a local Pebble instance (Let's Encrypt's own ACME protocol test
+server, run via Docker in `scripts/test-acme-e2e.sh`) — the test proves a
+*genuine* RFC 8555 issuance occurred by verifying the served certificate's
+chain against Pebble's actual issuing root, with a negative control
+confirming the same request fails TLS verification without that trust
+anchor. This also incidentally exercises Pebble's deliberately-injected
+~5% bad-nonce rate, proving `rustls-acme`'s retry behavior recovers from
+a real transient ACME protocol error, not just a happy path.
+
 ## [0.5.0] - 2026-07-20
 
 ### Added

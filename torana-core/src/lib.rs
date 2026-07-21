@@ -12,6 +12,8 @@
 //!   construct one, then call [`ProxyEngine::handle`] from your own
 //!   `service_fn`.
 
+#[cfg(feature = "acme")]
+pub mod acme;
 pub mod config;
 pub mod health;
 pub mod logging;
