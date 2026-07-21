@@ -20,16 +20,18 @@ Reported per proxy: throughput (qps), p50/p99 latency, idle memory after load, a
 
 ## Sample results
 
-One run on an Apple-silicon Mac (Docker Desktop, 15s, 64 connections) — expect different absolute numbers on your machine, and expect Caddy/torana to trade places on individual metrics run to run within a few percent:
+Two consecutive runs on an Apple-silicon Mac (Docker Desktop, 15s, 64 connections), back to back with no code changes between them — included both, not cherry-picked, to show the actual run-to-run spread:
 
-| | torana 0.4 | Caddy 2 | nginx (stock) |
-|---|---|---|---|
-| Throughput | 5,276 qps | 4,510 qps | 1,322 qps |
-| p50 / p99 | 10ms / 34ms | 11ms / 48ms | 48ms / 155ms |
-| Idle memory | 4.8 MiB | 21 MiB | 9.7 MiB |
-| Image size | 4.8 MB | 60 MB | 62 MB |
+| | torana 0.5 (run A) | torana 0.5 (run B) | Caddy 2 | nginx (stock) |
+|---|---|---|---|---|
+| Throughput | 4,462 qps | 5,084 qps | 4,495–4,704 qps | 1,317–1,342 qps |
+| p50 / p99 | 11ms / 50ms | 10ms / 34ms | 11–12ms / 34–41ms | 46–48ms / 107–155ms |
+| Idle memory | 5.2 MiB | — | 21 MiB | 9.7 MiB |
+| Image size | 4.9 MB | — | 60 MB | 62 MB |
 
-History on this setup: v0.1 (no pooling) measured ~1,060 qps with a 152ms p99; upstream keep-alive pooling brought throughput to Caddy parity; disabling Nagle (TCP_NODELAY on both accepted and upstream sockets) brought the p99 tail down to ~31ms; v0.4 added route matching, active health checks, connect retries, and a coordinated SIGHUP reload path with no measurable throughput or latency regression versus v0.3, despite the added routing and health-check bookkeeping on the request hot path.
+torana and Caddy are close enough that either can lead on a given run — expect different absolute numbers on your machine, and don't read a single run as a verdict.
+
+History on this setup: v0.1 (no pooling) measured ~1,060 qps with a 152ms p99; upstream keep-alive pooling brought throughput to Caddy parity; disabling Nagle (TCP_NODELAY on both accepted and upstream sockets) brought the p99 tail down to ~31ms; v0.4 added route matching, active health checks, and connect retries with no measurable regression; v0.5 added header rewriting, traffic mirroring, and mTLS — all three are no-ops on the request hot path unless a route actually configures them, and the bench config here doesn't, so the small idle-memory increase (4.8 → 5.2 MiB) is bookkeeping overhead, not per-request cost.
 
 ## Native alternative (no Docker)
 

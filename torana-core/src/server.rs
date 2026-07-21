@@ -91,11 +91,16 @@ impl ProxyEngine {
     /// request or response bodies (except for the empty body used to retry
     /// idempotent requests). Timeouts and connection errors become 504/502
     /// responses rather than propagated errors.
+    ///
+    /// `client_cert_fingerprint` is `Some` only when the connection
+    /// completed an mTLS handshake against a listener's `tls_client_ca`;
+    /// pass `None` for plain HTTP/TLS connections.
     pub async fn handle(
         &self,
         req: Request<hyper::body::Incoming>,
         client_addr: SocketAddr,
         client_proto: &'static str,
+        client_cert_fingerprint: Option<String>,
     ) -> Result<Response<ProxyBody>, hyper::Error> {
         let start = Instant::now();
         self.metrics.http_requests_total.inc();
@@ -111,6 +116,9 @@ impl ProxyEngine {
         let route_name;
         let max_attempts;
         let total_timeout;
+        let request_headers;
+        let response_headers;
+        let mirror;
         #[cfg(feature = "plugins")]
         let plugin: Option<Arc<crate::plugin::Plugin>>;
         {
@@ -131,6 +139,9 @@ impl ProxyEngine {
                 .timeout
                 .total_duration()
                 .unwrap_or(DEFAULT_TOTAL_TIMEOUT);
+            request_headers = route.headers.request.clone();
+            response_headers = route.headers.response.clone();
+            mirror = route.mirror.clone();
             #[cfg(feature = "plugins")]
             {
                 plugin = match &route.plugin {
@@ -152,17 +163,51 @@ impl ProxyEngine {
             }
         }
 
-        // Retries reconstruct the request from scratch each attempt, which
-        // requires a body we can cheaply recreate — safe only when the
-        // method carries no meaningful body and the client sent none. When
-        // that doesn't hold, effective_attempts is forced to 1, so the
-        // streaming body below is taken exactly once.
+        // Retries and mirroring both need to reconstruct the request from
+        // scratch, which requires a body we can cheaply recreate — safe
+        // only when the method carries no meaningful body and the client
+        // sent none. When that doesn't hold, effective_attempts is forced
+        // to 1, so the streaming body below is taken exactly once, and
+        // mirroring is skipped for this request.
         let (parts, incoming_body) = req.into_parts();
-        let can_retry = max_attempts > 1
-            && matches!(parts.method, Method::GET | Method::HEAD | Method::OPTIONS)
+        let body_replayable = matches!(parts.method, Method::GET | Method::HEAD | Method::OPTIONS)
             && incoming_body.size_hint().exact() == Some(0);
+        let can_retry = max_attempts > 1 && body_replayable;
         let effective_attempts = if can_retry { max_attempts } else { 1 };
         let mut incoming_body = Some(incoming_body);
+
+        if let Some(mirror) = &mirror {
+            if body_replayable && should_mirror(mirror.rate.unwrap_or(100)) {
+                let mirror_req = build_request(&parts, proxy::empty_body());
+                let mirror_addr = mirror.addr.clone();
+                let mirror_client = self.upstream_client.clone();
+                let mirror_timeout = total_timeout;
+                tokio::spawn(async move {
+                    let result = tokio::time::timeout(
+                        mirror_timeout,
+                        proxy::proxy_request(
+                            mirror_req,
+                            &mirror_addr,
+                            client_addr,
+                            client_proto,
+                            &mirror_client,
+                        ),
+                    )
+                    .await;
+                    match result {
+                        Ok(Ok(_)) => {}
+                        Ok(Err(e)) => {
+                            tracing::debug!(mirror = %mirror_addr, "mirror request failed: {}", e)
+                        }
+                        Err(_) => {
+                            tracing::debug!(mirror = %mirror_addr, "mirror request timed out")
+                        }
+                    }
+                });
+            } else if !body_replayable {
+                tracing::debug!(route = %route_name, "skipping mirror: request body cannot be safely duplicated");
+            }
+        }
 
         let mut tried: Vec<String> = Vec::new();
         let mut last_error: Option<anyhow::Error> = None;
@@ -188,7 +233,7 @@ impl ProxyEngine {
                 ));
             };
 
-            let attempt_req = if can_retry {
+            let mut attempt_req = if can_retry {
                 build_request(&parts, proxy::empty_body())
             } else {
                 let body = incoming_body
@@ -196,6 +241,24 @@ impl ProxyEngine {
                     .expect("non-retry path runs exactly one attempt");
                 build_request(&parts, body.boxed())
             };
+            if let Some(overrides) = &request_headers {
+                proxy::apply_header_overrides(attempt_req.headers_mut(), overrides);
+            }
+            // Client identity from a verified mTLS handshake is
+            // security-relevant: always strip whatever a client sent for
+            // this header, then set it ourselves only if this connection
+            // actually completed mTLS, so it can never be spoofed by a
+            // client on a plain HTTP/TLS listener or route override above.
+            attempt_req
+                .headers_mut()
+                .remove("x-client-cert-fingerprint");
+            if let Some(fingerprint) = &client_cert_fingerprint {
+                attempt_req.headers_mut().insert(
+                    hyper::header::HeaderName::from_static("x-client-cert-fingerprint"),
+                    hyper::header::HeaderValue::from_str(fingerprint)
+                        .expect("hex-encoded fingerprint is always a valid header value"),
+                );
+            }
 
             tracing::debug!(method = %method, uri = %path, upstream = %upstream_addr, attempt, "Proxying request");
 
@@ -212,10 +275,13 @@ impl ProxyEngine {
             .await;
 
             match result {
-                Ok(Ok(response)) => {
+                Ok(Ok(mut response)) => {
                     self.metrics
                         .http_request_duration_seconds
                         .observe(start.elapsed().as_secs_f64());
+                    if let Some(overrides) = &response_headers {
+                        proxy::apply_header_overrides(response.headers_mut(), overrides);
+                    }
                     return Ok(response.map(|body| body.boxed()));
                 }
                 Ok(Err(e)) => {
@@ -261,6 +327,25 @@ fn build_request(
     builder
         .body(body)
         .expect("rebuilding a request from a previously-valid head cannot fail")
+}
+
+/// Approximate sampling for `mirror.rate` (0-100). Uses the current
+/// timestamp's sub-second nanoseconds as a cheap, allocation-free source of
+/// variation — good enough for traffic sampling, not a cryptographic RNG,
+/// and avoids adding a `rand` dependency or extra shared per-route state
+/// that reload would need to keep in sync with the load balancer.
+fn should_mirror(rate: u32) -> bool {
+    if rate >= 100 {
+        return true;
+    }
+    if rate == 0 {
+        return false;
+    }
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.subsec_nanos())
+        .unwrap_or(0);
+    (nanos % 100) < rate
 }
 
 fn error_response(status: StatusCode, message: &'static str) -> Response<ProxyBody> {
@@ -341,7 +426,11 @@ impl Server {
             if listener_cfg.protocol == "https" {
                 let cert_path = listener_cfg.tls_cert.clone().expect("validated");
                 let key_path = listener_cfg.tls_key.clone().expect("validated");
-                let acceptor = tls::load_tls_config(&cert_path, &key_path)?;
+                let acceptor = tls::load_tls_config(
+                    &cert_path,
+                    &key_path,
+                    listener_cfg.tls_client_ca.as_deref(),
+                )?;
                 tracing::info!("HTTPS listener started on {}", addr);
                 tokio::spawn(run_listener(tcp, Some(acceptor), handler.clone()));
             } else {
@@ -423,27 +512,49 @@ async fn run_listener(
             match acceptor {
                 Some(acceptor) => match acceptor.accept(stream).await {
                     Ok(tls_stream) => {
+                        // Present only when the listener requires client
+                        // certificates (tls_client_ca) and the handshake
+                        // verified one; one fingerprint per connection,
+                        // reused across keep-alive requests.
+                        let client_cert_fingerprint = tls_stream
+                            .get_ref()
+                            .1
+                            .peer_certificates()
+                            .and_then(|certs| certs.first())
+                            .map(|cert| tls::cert_fingerprint(cert.as_ref()));
                         serve_connection(
                             hyper_util::rt::TokioIo::new(tls_stream),
                             peer,
                             "https",
                             handler,
+                            client_cert_fingerprint,
                         )
                         .await
                     }
                     Err(e) => tracing::debug!("TLS handshake failed: {}", e),
                 },
                 None => {
-                    serve_connection(hyper_util::rt::TokioIo::new(stream), peer, "http", handler)
-                        .await
+                    serve_connection(
+                        hyper_util::rt::TokioIo::new(stream),
+                        peer,
+                        "http",
+                        handler,
+                        None,
+                    )
+                    .await
                 }
             }
         });
     }
 }
 
-async fn serve_connection<I>(io: I, peer: SocketAddr, proto: &'static str, handler: ConnHandler)
-where
+async fn serve_connection<I>(
+    io: I,
+    peer: SocketAddr,
+    proto: &'static str,
+    handler: ConnHandler,
+    client_cert_fingerprint: Option<String>,
+) where
     I: hyper::rt::Read + hyper::rt::Write + Unpin + Send + 'static,
 {
     let _guard = handler.conn_tracker.clone();
@@ -451,7 +562,12 @@ where
 
     let service = service_fn(move |req: Request<hyper::body::Incoming>| {
         let engine = handler.engine.clone();
-        async move { engine.handle(req, peer, proto).await }
+        let client_cert_fingerprint = client_cert_fingerprint.clone();
+        async move {
+            engine
+                .handle(req, peer, proto, client_cert_fingerprint)
+                .await
+        }
     });
 
     let conn = hyper::server::conn::http1::Builder::new().serve_connection(io, service);

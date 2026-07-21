@@ -182,9 +182,9 @@ impl Config {
                     other
                 ),
             }
-            if listener.tls_client_ca.is_some() {
-                tracing::warn!(
-                    "listener {}: tls_client_ca (mTLS) is not implemented yet and will be ignored",
+            if listener.tls_client_ca.is_some() && listener.protocol != "https" {
+                anyhow::bail!(
+                    "listener {}: tls_client_ca requires protocol = \"https\"",
                     listener.addr
                 );
             }
@@ -260,17 +260,50 @@ impl Config {
                     route.name
                 );
             }
-            if route.mirror.is_some() {
-                tracing::warn!(
-                    "Route '{}': 'mirror' is not implemented yet and will be ignored",
-                    route.name
-                );
+            if let Some(mirror) = &route.mirror {
+                crate::proxy::upstream_host_port(&mirror.addr).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Route '{}': invalid mirror.addr '{}': {}",
+                        route.name,
+                        mirror.addr,
+                        e
+                    )
+                })?;
+                if let Some(rate) = mirror.rate {
+                    if rate > 100 {
+                        anyhow::bail!(
+                            "Route '{}': mirror.rate must be 0-100, got {}",
+                            route.name,
+                            rate
+                        );
+                    }
+                }
             }
-            if route.headers.request.is_some() || route.headers.response.is_some() {
-                tracing::warn!(
-                    "Route '{}': header rewriting is not implemented yet and will be ignored",
-                    route.name
-                );
+            for (name, value) in route
+                .headers
+                .request
+                .iter()
+                .chain(route.headers.response.iter())
+                .flatten()
+            {
+                hyper::header::HeaderName::from_bytes(name.as_bytes()).map_err(|e| {
+                    anyhow::anyhow!(
+                        "Route '{}': invalid header name '{}': {}",
+                        route.name,
+                        name,
+                        e
+                    )
+                })?;
+                if !value.is_empty() {
+                    hyper::header::HeaderValue::from_str(value).map_err(|e| {
+                        anyhow::anyhow!(
+                            "Route '{}': invalid header value for '{}': {}",
+                            route.name,
+                            name,
+                            e
+                        )
+                    })?;
+                }
             }
             if route.timeout.connect.is_some() || route.timeout.first_byte.is_some() {
                 tracing::warn!(
@@ -360,6 +393,61 @@ mod tests {
         assert_eq!(config.route[0].max_attempts(), 2);
         config.route[0].retries = Some(5);
         assert_eq!(config.route[0].max_attempts(), 5);
+    }
+
+    #[test]
+    fn rejects_tls_client_ca_on_http_listener() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.listener[0].tls_client_ca = Some("./ca.pem".into());
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_mirror_addr() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.route[0].mirror = Some(MirrorConfig {
+            addr: "http://127.0.0.1:not-a-port".into(),
+            rate: None,
+        });
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_mirror_rate_over_100() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.route[0].mirror = Some(MirrorConfig {
+            addr: "http://127.0.0.1:9001".into(),
+            rate: Some(101),
+        });
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn accepts_valid_mirror() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.route[0].mirror = Some(MirrorConfig {
+            addr: "http://127.0.0.1:9001".into(),
+            rate: Some(50),
+        });
+        config.validate().unwrap();
+    }
+
+    #[test]
+    fn rejects_invalid_header_name() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        let mut headers = HashMap::new();
+        headers.insert("bad header name".to_string(), "value".to_string());
+        config.route[0].headers.request = Some(headers);
+        assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn accepts_empty_header_value_as_removal() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        let mut headers = HashMap::new();
+        headers.insert("x-remove-me".to_string(), "".to_string());
+        config.route[0].headers.response = Some(headers);
+        config.validate().unwrap();
     }
 
     #[test]

@@ -106,6 +106,31 @@ fn strip_hop_by_hop(headers: &mut HeaderMap) {
     }
 }
 
+/// Apply `route.headers.request`/`.response` overrides. An empty value
+/// removes the header instead of setting it; config validation already
+/// rejects unparseable names/values, so failures here are defensive only.
+pub fn apply_header_overrides(
+    headers: &mut HeaderMap,
+    overrides: &std::collections::HashMap<String, String>,
+) {
+    for (name, value) in overrides {
+        let Ok(name) = HeaderName::from_bytes(name.as_bytes()) else {
+            tracing::warn!("skipping invalid header override name '{}'", name);
+            continue;
+        };
+        if value.is_empty() {
+            headers.remove(&name);
+            continue;
+        }
+        match HeaderValue::from_str(value) {
+            Ok(value) => {
+                headers.insert(name, value);
+            }
+            Err(_) => tracing::warn!("skipping invalid header override value for '{}'", name),
+        }
+    }
+}
+
 fn append_forwarded_headers(headers: &mut HeaderMap, client_addr: SocketAddr, proto: &'static str) {
     let client_ip = client_addr.ip().to_string();
     let xff = match headers.get("x-forwarded-for").and_then(|v| v.to_str().ok()) {
@@ -200,5 +225,27 @@ mod tests {
         append_forwarded_headers(&mut headers, addr, "https");
         assert_eq!(headers["x-forwarded-for"], "10.0.0.1, 192.168.1.5");
         assert_eq!(headers["x-forwarded-proto"], "https");
+    }
+
+    #[test]
+    fn header_override_sets_and_replaces() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-existing", HeaderValue::from_static("old"));
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("x-existing".to_string(), "new".to_string());
+        overrides.insert("x-new".to_string(), "added".to_string());
+        apply_header_overrides(&mut headers, &overrides);
+        assert_eq!(headers["x-existing"], "new");
+        assert_eq!(headers["x-new"], "added");
+    }
+
+    #[test]
+    fn header_override_empty_value_removes() {
+        let mut headers = HeaderMap::new();
+        headers.insert("x-remove-me", HeaderValue::from_static("value"));
+        let mut overrides = std::collections::HashMap::new();
+        overrides.insert("x-remove-me".to_string(), "".to_string());
+        apply_header_overrides(&mut headers, &overrides);
+        assert!(headers.get("x-remove-me").is_none());
     }
 }

@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-07-20
+
+### Added
+
+- **Header rewriting**: `[route.headers]` `request`/`response` maps are now
+  enforced instead of warned-and-ignored. An empty value removes the
+  header instead of setting it. Request overrides apply before the
+  proxy's own `X-Forwarded-*` headers, so they can never be overridden
+  by route config; response overrides apply after the upstream replies.
+- **Traffic mirroring**: `route.mirror` fires a duplicate, fire-and-forget
+  request at `mirror.addr` for a sampled fraction of traffic
+  (`mirror.rate`, 0-100, default 100), without affecting the real
+  response's latency or outcome. Only `GET`/`HEAD`/`OPTIONS` requests with
+  no body are mirrored — the same body-replayability rule already used
+  for retries, so a request is never duplicated in a way that could
+  double-execute a side effect.
+- **mTLS**: `listener.tls_client_ca` now enforces mandatory client
+  certificate verification via rustls's `WebPkiClientVerifier` — a
+  connection without a certificate signed by the given CA is rejected at
+  the TLS handshake, before any HTTP is processed. On success, a SHA-256
+  fingerprint of the verified client certificate is forwarded to the
+  upstream as `X-Client-Cert-Fingerprint`; this header is always stripped
+  from the client's original request first, so it can never be spoofed by
+  a client on a plain HTTP/TLS connection.
+
 ## [0.4.0] - 2026-07-20
 
 ### Added

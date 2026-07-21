@@ -8,7 +8,7 @@ A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. 
 
 *torana* (तोरण) is the Indian ceremonial gateway arch — a small, sturdy structure everything passes through.
 
-> **Status: early stage (v0.4).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.
+> **Status: early stage (v0.5).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.
 
 ## What it does
 
@@ -18,6 +18,9 @@ A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. 
 - **Active health checks** — routes can probe upstreams on an interval; unhealthy upstreams are skipped
 - **Retries** — `GET`/`HEAD`/`OPTIONS` requests with no body automatically retry a different upstream on connect failure (never retries requests that might have already been partially sent)
 - **Sandboxed WASM plugins** *(opt-in, `--features plugins`)* — a request filter compiled to WASM runs fuel-limited in a real sandbox with no filesystem/network/process access
+- **Header rewriting** — `route.headers` request/response overrides, with an empty value removing a header
+- **Traffic mirroring** — sample a fraction of `GET`/`HEAD`/`OPTIONS` traffic to a second upstream, fire-and-forget, with no effect on the real response
+- **mTLS** — `listener.tls_client_ca` makes client certificates mandatory; the verified cert's fingerprint is forwarded to the upstream and can never be spoofed by the client
 - **TLS termination** with rustls
 - **Weighted round-robin load balancing** across multiple upstreams
 - **Zero-downtime config reload** via `SIGHUP` — validated before swap; routes, upstreams, health checks, and plugins all rebuild atomically
@@ -36,7 +39,6 @@ Planned but **not implemented** — the config schema reserves fields for some o
 - HTTP/2 and HTTP/3
 - TLS to upstreams (`https://` upstream addresses are rejected)
 - Circuit breaking (retries and health checks exist; a breaker that ejects a flapping upstream faster does not, yet)
-- Header rewriting, traffic mirroring, mTLS (`tls_client_ca`)
 - Automatic HTTPS / ACME — if you want certificates managed for you, use [Caddy](https://caddyserver.com)
 
 If you need these today, use Caddy, nginx, or Envoy. torana trades features for a small, auditable binary.
@@ -123,6 +125,35 @@ A plugin is a WASM module exporting `memory`, `alloc(len: i32) -> i32`, and `on_
 
 This is why the feature is opt-in: wasmtime brings a Cranelift JIT that roughly doubles the binary. The default build stays small.
 
+## Header rewriting, mirroring, and mTLS
+
+```toml
+[[route]]
+name = "api"
+upstream = [{ addr = "http://127.0.0.1:3000" }]
+
+[route.headers]
+request = { "x-internal-token" = "shared-secret" }   # sent to the upstream
+response = { "server" = "" }                          # "" removes a header
+
+[route.mirror]
+addr = "http://127.0.0.1:3999"   # e.g. a canary or a shadow-traffic analyzer
+rate = 10                        # ~10% of eligible requests
+```
+
+Only `GET`/`HEAD`/`OPTIONS` requests with no body are mirrored — the same rule retries use, since a request that reached an upstream is never safely duplicable without risking a side effect running twice.
+
+```toml
+[[listener]]
+addr = "0.0.0.0:8443"
+protocol = "https"
+tls_cert = "./certs/server.crt"
+tls_key = "./certs/server.key"
+tls_client_ca = "./certs/ca.crt"   # client certs become mandatory
+```
+
+A connection without a certificate signed by `tls_client_ca` is rejected during the TLS handshake, before any HTTP is processed. On success, the verified certificate's SHA-256 fingerprint is forwarded to the upstream as `X-Client-Cert-Fingerprint` — and that header is always stripped from the client's original request first, so a client on a plain HTTP or non-mTLS listener can never spoof it.
+
 ## Using it as a library
 
 The proxy engine lives in a separate crate, [`torana-core`](torana-core), with none of the standalone binary's listener/signal machinery. Embed it inside a hyper server you already run:
@@ -151,7 +182,7 @@ let response = engine.handle(req, client_addr, "http").await?;
 | `listener.addr` | ✅ | Must parse as a socket address, e.g. `0.0.0.0:443` |
 | `listener.protocol` | ✅ | `http` or `https` |
 | `listener.tls_cert` / `tls_key` | ✅ | PEM files, required for `https` |
-| `listener.tls_client_ca` | ⚠️ ignored | mTLS not implemented |
+| `listener.tls_client_ca` | ✅ | mTLS: CA cert PEM; client certs become mandatory, verified fingerprint forwarded as `X-Client-Cert-Fingerprint` |
 | `route.name` | ✅ | Identifier used in logs and metrics |
 | `route.host` | ✅ | Exact hostname match (port stripped); `*.example.com` matches subdomains; unset matches any host |
 | `route.path` | ✅ | Path prefix match on segment boundaries; unset matches any path |
@@ -163,8 +194,8 @@ let response = engine.handle(req, client_addr, "http").await?;
 | `route.timeout.total` | ✅ | e.g. `500ms`, `30s`, `5m` (default `30s`) |
 | `route.timeout.connect` / `first_byte` | ⚠️ ignored | Only `total` is enforced |
 | `route.when` | ⚠️ ignored | Reserved for a future CEL-based matcher; use `host`/`path` today |
-| `route.mirror` | ⚠️ ignored | Traffic mirroring not implemented |
-| `route.headers` | ⚠️ ignored | Header rewriting not implemented |
+| `route.mirror.addr/rate` | ✅ | Fire-and-forget duplicate traffic; GET/HEAD/OPTIONS with no body only |
+| `route.headers.request/response` | ✅ | Overrides applied per direction; empty value removes the header |
 
 Fields marked ⚠️ parse without error (so configs stay forward-compatible) but log a warning at startup.
 

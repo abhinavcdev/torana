@@ -463,6 +463,9 @@
           <li><span class="tick">✓</span><span>Per-route timeouts — hanging upstreams return 504, not a stall</span></li>
           <li><span class="tick">✓</span><span>Prometheus <code>/metrics</code>, <code>/healthz</code>, structured JSON logs</span></li>
           <li><span class="tick">✓</span><span>Correct proxy headers — hop-by-hop stripped, X-Forwarded-* set</span></li>
+          <li><span class="tick">✓</span><span>Header rewriting — request/response overrides, empty value removes a header</span></li>
+          <li><span class="tick">✓</span><span>Traffic mirroring — sample GET/HEAD/OPTIONS traffic to a second upstream</span></li>
+          <li><span class="tick">✓</span><span>mTLS — mandatory client certs, verified fingerprint forwarded, never spoofable</span></li>
           <li><span class="tick">✓</span><span>Embeddable — the engine is a separate crate usable inside your own server</span></li>
         </ul>
       </div>
@@ -472,7 +475,6 @@
           <li><span class="tick no">—</span><span>HTTP/2 and HTTP/3</span></li>
           <li><span class="tick no">—</span><span>TLS to upstreams (https:// upstreams are rejected, not faked)</span></li>
           <li><span class="tick no">—</span><span>Circuit breaking — retries and health checks exist; a faster-ejecting breaker doesn't yet</span></li>
-          <li><span class="tick no">—</span><span>Header rewriting, traffic mirroring, mTLS</span></li>
           <li><span class="tick no">—</span><span>Automatic HTTPS — use <a href="https://caddyserver.com">Caddy</a> if you want managed certs</span></li>
         </ul>
       </div>
@@ -493,7 +495,7 @@
       <div class="case"><span class="tag">Metrics</span><h3>Instrumenting legacy services</h3><p>Put Prometheus request metrics in front of the service nobody dares recompile.</p></div>
       <div class="case"><span class="tag">Dev TLS</span><h3>Local HTTPS</h3><p>Terminate a self-signed cert in front of any dev server. One script generates the pair.</p></div>
       <div class="case"><span class="tag">Air-gapped</span><h3>Locked-down environments</h3><p>A single auditable binary, memory-safe Rust, rustls, and no dynamic config API to attack. Reload is a Unix signal.</p></div>
-      <div class="case"><span class="tag">CI</span><h3>Integration test fixtures</h3><p>Spin up a real proxy per test on a random port. torana's own suite runs 27 tests in about a second.</p></div>
+      <div class="case"><span class="tag">CI</span><h3>Integration test fixtures</h3><p>Spin up a real proxy per test on a random port. torana's own suite runs 54 tests in about a second.</p></div>
       <div class="case"><span class="tag">Appliance</span><h3>Embedded products</h3><p>Ship a proxy inside kiosks, appliances, and firmware images where every megabyte reaches a customer.</p></div>
     </div>
   </section>
@@ -648,7 +650,7 @@ tls_key = <span class="ac">"./certs/tls.key"</span></pre>
               <tr><td><code>listener.addr</code></td><td><span class="pill on">enforced</span></td><td class="td-note">socket address; binds fail fast at startup</td></tr>
               <tr><td><code>listener.protocol</code></td><td><span class="pill on">enforced</span></td><td class="td-note">http or https</td></tr>
               <tr><td><code>listener.tls_cert / tls_key</code></td><td><span class="pill on">enforced</span></td><td class="td-note">PEM paths, required when protocol = https</td></tr>
-              <tr><td><code>listener.tls_client_ca</code></td><td><span class="pill off">planned</span></td><td class="td-note">mTLS</td></tr>
+              <tr><td><code>listener.tls_client_ca</code></td><td><span class="pill on">enforced</span></td><td class="td-note">mTLS — CA PEM path; client certs become mandatory</td></tr>
               <tr><td><code>route.name</code></td><td><span class="pill on">enforced</span></td><td class="td-note">identifier used in logs and metrics</td></tr>
               <tr><td><code>route.host</code></td><td><span class="pill on">enforced</span></td><td class="td-note">exact hostname, or "*.example.com" for subdomains; unset matches any host</td></tr>
               <tr><td><code>route.path</code></td><td><span class="pill on">enforced</span></td><td class="td-note">prefix match on segment boundaries; unset matches any path</td></tr>
@@ -660,7 +662,8 @@ tls_key = <span class="ac">"./certs/tls.key"</span></pre>
               <tr><td><code>route.timeout.total</code></td><td><span class="pill on">enforced</span></td><td class="td-note">duration to upstream response headers, default 30s</td></tr>
               <tr><td><code>route.timeout.connect / first_byte</code></td><td><span class="pill off">planned</span></td><td class="td-note">only total is enforced</td></tr>
               <tr><td><code>route.when</code></td><td><span class="pill off">planned</span></td><td class="td-note">reserved for a future CEL-based matcher; use host/path today</td></tr>
-              <tr><td><code>route.headers / mirror</code></td><td><span class="pill off">planned</span></td><td class="td-note">header rewriting, traffic mirroring</td></tr>
+              <tr><td><code>route.headers.request / .response</code></td><td><span class="pill on">enforced</span></td><td class="td-note">per-direction overrides; empty value removes the header</td></tr>
+              <tr><td><code>route.mirror.addr / .rate</code></td><td><span class="pill on">enforced</span></td><td class="td-note">fire-and-forget; GET/HEAD/OPTIONS with no body only</td></tr>
             </tbody>
           </table>
         </div>
@@ -698,6 +701,33 @@ upstream = [{ addr = <span class="ac">"http://127.0.0.1:4000"</span> }]</pre>
 name = <span class="ac">"api"</span>
 plugin = <span class="ac">"./plugins/auth-filter.wasm"</span>
 upstream = [{ addr = <span class="ac">"http://127.0.0.1:3000"</span> }]</pre>
+        </div>
+        <h3>Header rewriting</h3>
+        <p>Request overrides apply before the proxy's own <code>X-Forwarded-*</code> headers, so they can never override those; response overrides apply after the upstream replies. An empty string value removes the header instead of setting it.</p>
+        <div class="code-card">
+          <div class="code-head"><span>rewrite headers</span><button class="copy-btn" data-copy='[route.headers]&#10;request = { "x-internal-token" = "shared-secret" }&#10;response = { "server" = "" }'>copy</button></div>
+          <pre><span class="cm">[route.headers]</span>
+request = { <span class="ac">"x-internal-token"</span> = <span class="ac">"shared-secret"</span> }
+response = { <span class="ac">"server"</span> = <span class="ac">""</span> }   <span class="cm"># "" removes it</span></pre>
+        </div>
+        <h3>Traffic mirroring</h3>
+        <p>Sends a duplicate, fire-and-forget copy of eligible requests to <code>mirror.addr</code> — the mirror's response (or failure, or timeout) never affects the real one. <code>rate</code> is 0-100 (default 100) and uses a low-cost timestamp-based approximation, not a cryptographic RNG — fine for sampling traffic, not for anything security-sensitive. Only <code>GET</code>/<code>HEAD</code>/<code>OPTIONS</code> requests with no body are mirrored, for the same reason retries are restricted the same way: duplicating a request that might carry a side effect risks running it twice.</p>
+        <div class="code-card">
+          <div class="code-head"><span>mirror 10% of eligible traffic</span><button class="copy-btn" data-copy='[route.mirror]&#10;addr = "http://127.0.0.1:3999"&#10;rate = 10'>copy</button></div>
+          <pre><span class="cm">[route.mirror]</span>
+addr = <span class="ac">"http://127.0.0.1:3999"</span>
+rate = 10</pre>
+        </div>
+        <h3>mTLS</h3>
+        <p>Setting <code>tls_client_ca</code> on an <code>https</code> listener makes client certificates mandatory — a connection presenting no certificate, or one not signed by that CA, is rejected during the TLS handshake, before any HTTP request is processed. On success, torana forwards a SHA-256 fingerprint of the verified certificate to the upstream as <code>X-Client-Cert-Fingerprint</code>. That header is always stripped from the client's original request first, so it can never be spoofed by a client connecting over plain HTTP or a non-mTLS listener.</p>
+        <div class="code-card">
+          <div class="code-head"><span>require client certificates</span><button class="copy-btn" data-copy='[[listener]]&#10;addr = "0.0.0.0:8443"&#10;protocol = "https"&#10;tls_cert = "./certs/server.crt"&#10;tls_key = "./certs/server.key"&#10;tls_client_ca = "./certs/ca.crt"'>copy</button></div>
+          <pre><span class="cm">[[listener]]</span>
+addr = <span class="ac">"0.0.0.0:8443"</span>
+protocol = <span class="ac">"https"</span>
+tls_cert = <span class="ac">"./certs/server.crt"</span>
+tls_key = <span class="ac">"./certs/server.key"</span>
+tls_client_ca = <span class="ac">"./certs/ca.crt"</span></pre>
         </div>
       </section>
 
@@ -832,7 +862,7 @@ docker compose -f bench/docker-compose.yml down</pre>
 
       <section id="docs-roadmap">
         <h2>Roadmap</h2>
-        <p>Route matching, active health checks, connect retries, and a sandboxed WASM plugin hook shipped in 0.4. In rough priority order from here: HTTP/2 (client-facing and upstream), TLS to upstreams, a circuit breaker that ejects a flapping upstream faster than health checks alone, header rewriting, traffic mirroring, and mTLS. The config schema already reserves fields for most of these — configs written today keep working.</p>
+        <p>Route matching, active health checks, connect retries, and a sandboxed WASM plugin hook shipped in 0.4; header rewriting, traffic mirroring, and mTLS shipped in 0.5. In rough priority order from here: HTTP/2 (client-facing and upstream), TLS to upstreams, and a circuit breaker that ejects a flapping upstream faster than health checks alone. Automatic HTTPS / ACME is deliberately not planned — it would blur the line against Caddy, which already does this well. The config schema reserves fields for what's left, so configs written today keep working.</p>
         <p>If one of these matters to you, <a href="https://github.com/abhinavcdev/torana/issues">open an issue</a> — early-stage projects reorder roadmaps for real users.</p>
       </section>
     </div>
