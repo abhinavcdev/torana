@@ -40,12 +40,16 @@ impl Plugin {
     pub fn load(path: &str) -> anyhow::Result<Self> {
         let mut config = WasmConfig::new();
         config.consume_fuel(true);
-        let engine = Engine::new(&config).context("initializing wasmtime engine")?;
+        let engine = Engine::new(&config)
+            .map_err(anyhow::Error::msg)
+            .context("initializing wasmtime engine")?;
 
         let bytes = std::fs::read(path).with_context(|| format!("reading plugin '{}'", path))?;
-        let module = Module::new(&engine, &bytes).with_context(|| {
-            format!("compiling plugin '{}' (must be a valid WASM module)", path)
-        })?;
+        let module = Module::new(&engine, &bytes)
+            .map_err(anyhow::Error::msg)
+            .with_context(|| {
+                format!("compiling plugin '{}' (must be a valid WASM module)", path)
+            })?;
 
         module
             .get_export("on_request")
@@ -77,18 +81,22 @@ impl Plugin {
         let mut store = Store::new(&self.engine, ());
         store
             .set_fuel(FUEL_PER_CALL)
+            .map_err(anyhow::Error::msg)
             .context("setting fuel budget")?;
 
-        let instance =
-            Instance::new(&mut store, &self.module, &[]).context("instantiating plugin")?;
+        let instance = Instance::new(&mut store, &self.module, &[])
+            .map_err(anyhow::Error::msg)
+            .context("instantiating plugin")?;
         let memory: Memory = instance
             .get_memory(&mut store, "memory")
             .context("plugin has no memory export")?;
         let alloc: TypedFunc<i32, i32> = instance
             .get_typed_func(&mut store, "alloc")
+            .map_err(anyhow::Error::msg)
             .context("plugin `alloc` has the wrong signature (expected (i32) -> i32)")?;
         let on_request: TypedFunc<(i32, i32, i32, i32), i32> = instance
             .get_typed_func(&mut store, "on_request")
+            .map_err(anyhow::Error::msg)
             .context("plugin `on_request` has the wrong signature")?;
 
         let method_ptr = write_bytes(&mut store, &memory, &alloc, method.as_bytes())?;
@@ -99,6 +107,7 @@ impl Plugin {
                 &mut store,
                 (method_ptr, method.len() as i32, path_ptr, path.len() as i32),
             )
+            .map_err(anyhow::Error::msg)
             .context("plugin `on_request` trapped (possibly out of fuel)")?;
 
         Ok(match code {
@@ -117,6 +126,7 @@ fn write_bytes(
 ) -> anyhow::Result<i32> {
     let ptr = alloc
         .call(&mut *store, bytes.len() as i32)
+        .map_err(anyhow::Error::msg)
         .context("plugin alloc() call failed")?;
     memory
         .write(&mut *store, ptr as usize, bytes)

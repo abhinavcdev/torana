@@ -437,10 +437,9 @@ impl Server {
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to bind {}: {}", addr, e))?;
 
-            if listener_cfg.acme.is_some() {
+            if let Some(acme_cfg) = &listener_cfg.acme {
                 #[cfg(feature = "acme")]
                 {
-                    let acme_cfg = listener_cfg.acme.as_ref().expect("validated");
                     let handle = crate::acme::build(
                         acme_cfg.domains.clone(),
                         acme_cfg.contact_emails.clone().unwrap_or_default(),
@@ -459,7 +458,10 @@ impl Server {
                     ));
                 }
                 #[cfg(not(feature = "acme"))]
-                unreachable!("validated: acme requires --features acme");
+                {
+                    let _ = acme_cfg;
+                    unreachable!("validated: acme requires --features acme");
+                }
             } else if listener_cfg.protocol == "https" {
                 let cert_path = listener_cfg.tls_cert.clone().expect("validated");
                 let key_path = listener_cfg.tls_key.clone().expect("validated");

@@ -15,16 +15,16 @@ http-body-util = "0.1"
 bytes = "1.5"
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
 rustls-pemfile = "2.1"
-tokio-rustls = "0.25"
+tokio-rustls = "0.26"
 ring = "0.17"
 serde = { version = "1.0", features = ["derive"] }
 toml = "0.8"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
-prometheus = "0.13"
+prometheus = "0.14"
 thiserror = "1.0"
 anyhow = "1.0"
-wasmtime = { version = "26", optional = true }
+wasmtime = { version = "47", optional = true }
 rustls-acme = { version = "0.15", default-features = false, features = ["ring", "tokio", "webpki-roots"], optional = true }
 tokio-util = { version = "0.7", features = ["compat"], optional = true }
 futures = { version = "0.3", optional = true }
