@@ -2,6 +2,11 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::time::Duration;
 
+/// Upper bound on `route.upstream[].weight`. The load balancer expands
+/// weights into a flat schedule sized by the largest weight after GCD
+/// reduction, so this also bounds that allocation.
+const MAX_UPSTREAM_WEIGHT: u32 = 10_000;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Config {
     pub global: GlobalConfig,
@@ -295,6 +300,22 @@ impl Config {
                         e
                     )
                 })?;
+                // The load balancer expands weights into a flat round-robin
+                // schedule sized by the largest weight after GCD reduction;
+                // an unbounded weight (e.g. a fat-fingered extra zero) would
+                // make that allocation unbounded too. This cap is far above
+                // any legitimate ratio.
+                if let Some(weight) = upstream.weight {
+                    if weight > MAX_UPSTREAM_WEIGHT {
+                        anyhow::bail!(
+                            "Route '{}': upstream '{}' weight {} exceeds the maximum of {}",
+                            route.name,
+                            upstream.addr,
+                            weight,
+                            MAX_UPSTREAM_WEIGHT
+                        );
+                    }
+                }
             }
             if let Some(total) = route.timeout.total.as_deref() {
                 parse_duration(total).map_err(|e| {
@@ -455,6 +476,25 @@ mod tests {
         let mut config = minimal_config("http://127.0.0.1:9000");
         config.route[0].retries = Some(0);
         assert!(config.validate().is_err());
+    }
+
+    #[test]
+    fn rejects_upstream_weight_over_max() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.route[0].upstream[0].weight = Some(MAX_UPSTREAM_WEIGHT + 1);
+        let err = config.validate().unwrap_err().to_string();
+        assert!(
+            err.contains("exceeds the maximum"),
+            "unexpected error: {}",
+            err
+        );
+    }
+
+    #[test]
+    fn accepts_upstream_weight_at_max() {
+        let mut config = minimal_config("http://127.0.0.1:9000");
+        config.route[0].upstream[0].weight = Some(MAX_UPSTREAM_WEIGHT);
+        config.validate().unwrap();
     }
 
     #[test]

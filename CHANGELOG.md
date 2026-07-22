@@ -6,6 +6,31 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- `route.upstream[].weight` is now capped at 10,000. The load balancer
+  expands weights (after GCD reduction) into a flat round-robin schedule
+  sized by the largest weight, so an unbounded value could force an
+  unbounded allocation at startup or reload.
+- The Docker image now runs as a non-root user (`65532:65532`, the common
+  "nonroot" numeric convention) instead of root, verified end-to-end
+  against the existing bench harness.
+- The metrics/`/healthz` listener's response write is now bounded by a
+  5s timeout, matching the read side, so a client that stops reading
+  can't hold the connection open indefinitely.
+- Documented the trust boundary on `X-Forwarded-For` (torana appends to,
+  rather than replaces, a client-supplied value — the same convention
+  nginx and Caddy use — so an upstream trusting it for access control
+  must read the last hop, not the first) and clarified that rotating a
+  static `tls_cert`/`tls_key` pair requires a restart, since a running
+  listener keeps the certificate it was bound with (ACME-managed
+  listeners are unaffected — they renew internally).
+- Release binaries now ship with a `.sha256` checksum file alongside
+  each archive.
+- Added `.github/dependabot.yml` (cargo, npm, github-actions) and enabled
+  GitHub's Dependabot vulnerability alerts and automated security
+  updates for this repository.
+
 ## [0.6.0] - 2026-07-21
 
 ### Added

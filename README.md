@@ -29,7 +29,7 @@ A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. 
 - **Zero-downtime config reload** via `SIGHUP`: validated before swap; routes, upstreams, health checks, and plugins all rebuild atomically
 - **Per-route total timeout** (default 30s): hanging upstreams return `504` instead of stalling clients
 - **Graceful shutdown**: SIGTERM/SIGINT stop accepting, drain in-flight requests (15s cap), then exit
-- **Correct proxy header handling**: strips hop-by-hop headers, sets `X-Forwarded-For` / `X-Forwarded-Proto`
+- **Correct proxy header handling**: strips hop-by-hop headers, sets `X-Forwarded-For` / `X-Forwarded-Proto` (appends to any client-supplied `X-Forwarded-For` rather than replacing it, same convention nginx/Caddy use — an upstream that trusts this header for access control must read the last hop, not the first; see [Forwarded headers & trust boundary](https://abhinavcdev.github.io/torana/docs/security/#forwarded-headers-trust-boundary))
 - **Prometheus metrics** (`http_requests_total`, `http_request_duration_seconds`, `upstream_connection_errors`) and a `/healthz` endpoint
 - **Structured JSON logging** via `tracing`
 - **Config validation at startup**: invalid configs exit non-zero; accepted-but-unimplemented fields log a warning instead of being silently ignored

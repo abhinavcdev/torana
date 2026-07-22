@@ -34,7 +34,18 @@ jobs:
         run: |
           cd target/${{ matrix.target }}/release
           tar czf torana-${{ github.ref_name }}-${{ matrix.target }}.tar.gz torana
+      - name: Checksum
+        run: |
+          cd target/${{ matrix.target }}/release
+          archive="torana-${{ github.ref_name }}-${{ matrix.target }}.tar.gz"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "$archive" > "$archive.sha256"
+          else
+            shasum -a 256 "$archive" > "$archive.sha256"
+          fi
       - uses: softprops/action-gh-release@v2
         with:
-          files: target/${{ matrix.target }}/release/torana-*.tar.gz
+          files: |
+            target/${{ matrix.target }}/release/torana-*.tar.gz
+            target/${{ matrix.target }}/release/torana-*.tar.gz.sha256
           generate_release_notes: true

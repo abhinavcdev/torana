@@ -31,3 +31,8 @@ Thumbs.db
 
 # Local agent config
 .claude/
+.agents/
+skills-lock.json
+
+# Local video/marketing-asset generation projects (not part of the proxy)
+videos/

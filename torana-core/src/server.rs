@@ -738,8 +738,11 @@ async fn serve_metrics(listener: tokio::net::TcpListener, registry: prometheus::
                 body.len(),
                 body
             );
-            let _ = stream.write_all(response.as_bytes()).await;
-            let _ = stream.flush().await;
+            let _ = tokio::time::timeout(Duration::from_secs(5), async {
+                stream.write_all(response.as_bytes()).await?;
+                stream.flush().await
+            })
+            .await;
         });
     }
 }

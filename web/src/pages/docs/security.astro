@@ -23,6 +23,9 @@ tls_cert = <span class="ac">"./certs/server.crt"</span>
 tls_key = <span class="ac">"./certs/server.key"</span>
 tls_client_ca = <span class="ac">"./certs/ca.crt"</span>`} /></CodeBlock>
 
+  <h2>Forwarded headers &amp; trust boundary</h2>
+  <p>torana sets <code>X-Forwarded-Proto</code> to the protocol the client actually connected with, and appends the real observed client IP to <code>X-Forwarded-For</code> (creating it if absent). If the client's own request already carried an <code>X-Forwarded-For</code> value, that value is kept and torana's IP is appended after it, the same convention nginx and Caddy use. This means <strong>an internet-facing torana listener does not by itself stop a client from forging the leading entries in its own <code>X-Forwarded-For</code></strong>: only the last-appended IP is one torana actually observed on the socket. If an upstream trusts <code>X-Forwarded-For</code> for access control, rate limiting, or geolocation, it must read the last hop, not the first, or sit behind something (a CDN, a load balancer with its own trusted-proxy list) that strips or validates the header before torana ever sees it.</p>
+
   <h2>Header rewriting</h2>
   <p>Request overrides apply before the proxy's own <code>X-Forwarded-*</code> headers, so they can never override those; response overrides apply after the upstream replies. An empty string value removes the header instead of setting it.</p>
   <CodeBlock

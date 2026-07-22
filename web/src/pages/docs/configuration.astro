@@ -31,7 +31,7 @@ import CodeBlock from "../../components/CodeBlock.astro";
         <tr><td><code>route.host</code></td><td><span class="pill on">enforced</span></td><td class="td-note">exact hostname, or "*.example.com" for subdomains; unset matches any host</td></tr>
         <tr><td><code>route.path</code></td><td><span class="pill on">enforced</span></td><td class="td-note">prefix match on segment boundaries; unset matches any path</td></tr>
         <tr><td><code>route.upstream[].addr</code></td><td><span class="pill on">enforced</span></td><td class="td-note">http://host:port; https upstreams are rejected</td></tr>
-        <tr><td><code>route.upstream[].weight</code></td><td><span class="pill on">enforced</span></td><td class="td-note">relative integer weight, default 100</td></tr>
+        <tr><td><code>route.upstream[].weight</code></td><td><span class="pill on">enforced</span></td><td class="td-note">relative integer weight, default 100, max 10,000</td></tr>
         <tr><td><code>route.retries</code></td><td><span class="pill on">enforced</span></td><td class="td-note">max attempts for GET/HEAD/OPTIONS with no body; default 2 with multiple upstreams</td></tr>
         <tr><td><code>route.health_check.*</code></td><td><span class="pill on">enforced</span></td><td class="td-note">path/interval/timeout; absent = always healthy</td></tr>
         <tr><td><code>route.plugin</code></td><td><span class="pill on">enforced*</span></td><td class="td-note">WASM request filter path, *needs <code>--features plugins</code></td></tr>
