@@ -6,7 +6,7 @@ import CodeBlock from "../../components/CodeBlock.astro";
 <DocsLayout
   current="embedding"
   title="Using it as a library"
-  description="torana-core is a separate crate with the routing and forwarding engine but none of the standalone binary's listener or signal machinery — embed it inside a hyper server you already run."
+  description="torana-core is a separate crate with the routing and forwarding engine but none of the standalone binary's listener or signal machinery: embed it inside a hyper server you already run."
 >
   <h1>Using it as a library</h1>
   <p class="docs-sub">The proxy engine is a separate crate, <code>torana-core</code>, with none of the standalone binary's listener/signal machinery.</p>
@@ -25,7 +25,7 @@ engine.spawn_health_probers().await;
 <span class="cm">// inside your own service_fn:</span>
 let response = engine.handle(req, client_addr, <span class="ac">"http"</span>).await?;`} /></CodeBlock>
 
-  <p><code>Server</code> (what the <code>torana</code> binary uses) is a thin wrapper around <code>ProxyEngine</code> that adds listener binding, SIGHUP reload, and graceful shutdown on top — read <code>torana-core/src/server.rs</code> if you want that full behavior instead of wiring it up yourself.</p>
+  <p><code>Server</code> (what the <code>torana</code> binary uses) is a thin wrapper around <code>ProxyEngine</code> that adds listener binding, SIGHUP reload, and graceful shutdown on top. Read <code>torana-core/src/server.rs</code> if you want that full behavior instead of wiring it up yourself.</p>
 
   <p>Next: <a href="../signals/">signals &amp; reloads</a>.</p>
 </DocsLayout>

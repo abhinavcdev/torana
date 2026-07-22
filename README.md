@@ -4,40 +4,40 @@
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](LICENSE-MIT)
 [![Rust 1.75+](https://img.shields.io/badge/rust-1.75%2B-orange.svg)](Cargo.toml)
 
-A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. Single static binary (~5.3 MB), millisecond startup, pure-Rust TLS via [rustls](https://github.com/rustls/rustls) — no OpenSSL, no runtime dependencies.
+A tiny reverse proxy written in Rust for edge, sidecar, and embedded use cases. Single static binary (~5.3 MB), millisecond startup, pure-Rust TLS via [rustls](https://github.com/rustls/rustls): no OpenSSL, no runtime dependencies.
 
 **[Full docs & site →](https://abhinavcdev.github.io/torana/)**
 
-*torana* (तोरण) is the Indian ceremonial gateway arch — a small, sturdy structure everything passes through.
+*torana* (तोरण) is the Indian ceremonial gateway arch: a small, sturdy structure everything passes through.
 
 > **Status: early stage (v0.6).** The features listed below work and are tested, but this project is young and has not been hardened by production traffic. Read [What it doesn't do yet](#what-it-doesnt-do-yet) before deploying it anywhere that matters.
 
 ## What it does
 
-- **HTTP/1.1 and HTTP/2 (client-facing)** with streaming request/response bodies (no buffering) — HTTPS listeners negotiate h2 via ALPN; the upstream leg always speaks HTTP/1.1
+- **HTTP/1.1 and HTTP/2 (client-facing)** with streaming request/response bodies (no buffering): HTTPS listeners negotiate h2 via ALPN; the upstream leg always speaks HTTP/1.1
 - **Host- and path-based routing** across multiple routes, first-match-wins, with a catch-all fallback
-- **Upstream connection pooling** — keep-alive connections are reused across requests
-- **Active health checks** — routes can probe upstreams on an interval; unhealthy upstreams are skipped
-- **Retries** — `GET`/`HEAD`/`OPTIONS` requests with no body automatically retry a different upstream on connect failure (never retries requests that might have already been partially sent)
-- **Sandboxed WASM plugins** *(opt-in, `--features plugins`)* — a request filter compiled to WASM runs fuel-limited in a real sandbox with no filesystem/network/process access
-- **Header rewriting** — `route.headers` request/response overrides, with an empty value removing a header
-- **Traffic mirroring** — sample a fraction of `GET`/`HEAD`/`OPTIONS` traffic to a second upstream, fire-and-forget, with no effect on the real response
-- **mTLS** — `listener.tls_client_ca` makes client certificates mandatory; the verified cert's fingerprint is forwarded to the upstream and can never be spoofed by the client
-- **Automatic HTTPS via ACME** *(opt-in, `--features acme`)* — RFC 8555 / TLS-ALPN-01, works with Let's Encrypt or a private ACME server
+- **Upstream connection pooling**: keep-alive connections are reused across requests
+- **Active health checks**: routes can probe upstreams on an interval; unhealthy upstreams are skipped
+- **Retries**: `GET`/`HEAD`/`OPTIONS` requests with no body automatically retry a different upstream on connect failure (never retries requests that might have already been partially sent)
+- **Sandboxed WASM plugins** *(opt-in, `--features plugins`)*: a request filter compiled to WASM runs fuel-limited in a real sandbox with no filesystem/network/process access
+- **Header rewriting**: `route.headers` request/response overrides, with an empty value removing a header
+- **Traffic mirroring**: sample a fraction of `GET`/`HEAD`/`OPTIONS` traffic to a second upstream, fire-and-forget, with no effect on the real response
+- **mTLS**: `listener.tls_client_ca` makes client certificates mandatory; the verified cert's fingerprint is forwarded to the upstream and can never be spoofed by the client
+- **Automatic HTTPS via ACME** *(opt-in, `--features acme`)*: RFC 8555 / TLS-ALPN-01, works with Let's Encrypt or a private ACME server
 - **TLS termination** with rustls
 - **Weighted round-robin load balancing** across multiple upstreams
-- **Zero-downtime config reload** via `SIGHUP` — validated before swap; routes, upstreams, health checks, and plugins all rebuild atomically
-- **Per-route total timeout** (default 30s) — hanging upstreams return `504` instead of stalling clients
-- **Graceful shutdown** — SIGTERM/SIGINT stop accepting, drain in-flight requests (15s cap), then exit
-- **Correct proxy header handling** — strips hop-by-hop headers, sets `X-Forwarded-For` / `X-Forwarded-Proto`
+- **Zero-downtime config reload** via `SIGHUP`: validated before swap; routes, upstreams, health checks, and plugins all rebuild atomically
+- **Per-route total timeout** (default 30s): hanging upstreams return `504` instead of stalling clients
+- **Graceful shutdown**: SIGTERM/SIGINT stop accepting, drain in-flight requests (15s cap), then exit
+- **Correct proxy header handling**: strips hop-by-hop headers, sets `X-Forwarded-For` / `X-Forwarded-Proto`
 - **Prometheus metrics** (`http_requests_total`, `http_request_duration_seconds`, `upstream_connection_errors`) and a `/healthz` endpoint
 - **Structured JSON logging** via `tracing`
-- **Config validation at startup** — invalid configs exit non-zero; accepted-but-unimplemented fields log a warning instead of being silently ignored
-- **Embeddable** — the routing/forwarding core is a separate crate ([`torana-core`](torana-core)) you can use inside your own hyper server, independent of torana's listener/signal machinery. See [Using it as a library](#using-it-as-a-library).
+- **Config validation at startup**: invalid configs exit non-zero; accepted-but-unimplemented fields log a warning instead of being silently ignored
+- **Embeddable**: the routing/forwarding core is a separate crate ([`torana-core`](torana-core)) you can use inside your own hyper server, independent of torana's listener/signal machinery. See [Using it as a library](#using-it-as-a-library).
 
 ## What it doesn't do (yet)
 
-Planned but **not implemented** — the config schema reserves fields for some of these, and torana will warn if you set them:
+Planned but **not implemented**: the config schema reserves fields for some of these, and torana will warn if you set them:
 
 - HTTP/3
 - HTTP/2 to upstreams (the proxy-to-upstream leg is always HTTP/1.1)
@@ -110,7 +110,7 @@ name = "default"            # no host/path constraint: catch-all, put it last
 upstream = [{ addr = "http://127.0.0.1:4000" }]
 ```
 
-Routes are matched in config order — put more specific routes first, catch-alls last.
+Routes are matched in config order: put more specific routes first, catch-alls last.
 
 ## Sandboxed WASM plugins (opt-in)
 
@@ -125,7 +125,7 @@ plugin = "./plugins/auth-filter.wasm"
 upstream = [{ addr = "http://127.0.0.1:3000" }]
 ```
 
-A plugin is a WASM module exporting `memory`, `alloc(len: i32) -> i32`, and `on_request(method_ptr, method_len, path_ptr, path_len) -> i32` (`0` allows the request; `400..600` denies with that status; anything else denies with `403`). No host functions are exposed — a plugin cannot touch the filesystem, network, or process; wasmtime's sandbox is the entire security boundary, and execution is fuel-limited so a runaway plugin can't hang a request. See [torana-core/src/plugin.rs](torana-core/src/plugin.rs) for the full ABI and a working example compiled in the test suite.
+A plugin is a WASM module exporting `memory`, `alloc(len: i32) -> i32`, and `on_request(method_ptr, method_len, path_ptr, path_len) -> i32` (`0` allows the request; `400..600` denies with that status; anything else denies with `403`). No host functions are exposed: a plugin cannot touch the filesystem, network, or process; wasmtime's sandbox is the entire security boundary, and execution is fuel-limited so a runaway plugin can't hang a request. See [torana-core/src/plugin.rs](torana-core/src/plugin.rs) for the full ABI and a working example compiled in the test suite.
 
 This is why the feature is opt-in: wasmtime brings a Cranelift JIT that roughly doubles the binary. The default build stays small.
 
@@ -145,7 +145,7 @@ addr = "http://127.0.0.1:3999"   # e.g. a canary or a shadow-traffic analyzer
 rate = 10                        # ~10% of eligible requests
 ```
 
-Only `GET`/`HEAD`/`OPTIONS` requests with no body are mirrored — the same rule retries use, since a request that reached an upstream is never safely duplicable without risking a side effect running twice.
+Only `GET`/`HEAD`/`OPTIONS` requests with no body are mirrored: the same rule retries use, since a request that reached an upstream is never safely duplicable without risking a side effect running twice.
 
 ```toml
 [[listener]]
@@ -156,11 +156,11 @@ tls_key = "./certs/server.key"
 tls_client_ca = "./certs/ca.crt"   # client certs become mandatory
 ```
 
-A connection without a certificate signed by `tls_client_ca` is rejected during the TLS handshake, before any HTTP is processed. On success, the verified certificate's SHA-256 fingerprint is forwarded to the upstream as `X-Client-Cert-Fingerprint` — and that header is always stripped from the client's original request first, so a client on a plain HTTP or non-mTLS listener can never spoof it.
+A connection without a certificate signed by `tls_client_ca` is rejected during the TLS handshake, before any HTTP is processed. On success, the verified certificate's SHA-256 fingerprint is forwarded to the upstream as `X-Client-Cert-Fingerprint`. That header is always stripped from the client's original request first, so a client on a plain HTTP or non-mTLS listener can never spoof it.
 
 ## HTTP/2
 
-HTTPS listeners negotiate h2 automatically via ALPN — nothing to configure. A client that doesn't support h2 falls back to http/1.1 on the same listener. The proxy-to-upstream leg is always HTTP/1.1 regardless of what the client negotiated (this proxy doesn't support HTTP/2 upstreams).
+HTTPS listeners negotiate h2 automatically via ALPN: nothing to configure. A client that doesn't support h2 falls back to http/1.1 on the same listener. The proxy-to-upstream leg is always HTTP/1.1 regardless of what the client negotiated (this proxy doesn't support HTTP/2 upstreams).
 
 ## Automatic HTTPS via ACME (opt-in)
 
@@ -180,7 +180,7 @@ cache_dir = "./acme-cache"     # issued certs + account key, default "./acme-cac
 # staging = true               # use Let's Encrypt's staging directory while testing
 ```
 
-Certificates are obtained and renewed automatically via RFC 8555, using the TLS-ALPN-01 challenge — no separate port 80 listener or DNS record needed beyond what the domain already requires. `acme` is mutually exclusive with `tls_cert`/`tls_key` (it replaces them) and with `tls_client_ca` (mTLS + ACME on the same listener isn't supported yet). Point `directory_url` at a private ACME server instead of Let's Encrypt, and set `ca_cert` to trust that server's CA if it isn't in the public web PKI (this is exactly how torana's own end-to-end test verifies against a local [Pebble](https://github.com/letsencrypt/pebble) instance — see `scripts/test-acme-e2e.sh`).
+Certificates are obtained and renewed automatically via RFC 8555, using the TLS-ALPN-01 challenge: no separate port 80 listener or DNS record needed beyond what the domain already requires. `acme` is mutually exclusive with `tls_cert`/`tls_key` (it replaces them) and with `tls_client_ca` (mTLS + ACME on the same listener isn't supported yet). Point `directory_url` at a private ACME server instead of Let's Encrypt, and set `ca_cert` to trust that server's CA if it isn't in the public web PKI (this is exactly how torana's own end-to-end test verifies against a local [Pebble](https://github.com/letsencrypt/pebble) instance: see `scripts/test-acme-e2e.sh`).
 
 ## Using it as a library
 
@@ -197,7 +197,7 @@ engine.spawn_health_probers().await;
 let response = engine.handle(req, client_addr, "http").await?;
 ```
 
-`Server` (used by the `torana` binary) is a thin wrapper around `ProxyEngine` that adds listener binding, SIGHUP reload, and graceful SIGTERM/SIGINT shutdown — read [torana-core/src/server.rs](torana-core/src/server.rs) if you want the full batteries-included behavior instead.
+`Server` (used by the `torana` binary) is a thin wrapper around `ProxyEngine` that adds listener binding, SIGHUP reload, and graceful SIGTERM/SIGINT shutdown: read [torana-core/src/server.rs](torana-core/src/server.rs) if you want the full batteries-included behavior instead.
 
 ## Configuration reference
 
@@ -255,9 +255,9 @@ cargo clippy -p torana-core --all-targets --features acme -- -D warnings
 cargo fmt --all --check
 ```
 
-Integration tests spawn real proxy processes against in-process backends on random ports, so they run in parallel and touch nothing outside the test. The ACME end-to-end test goes further: it runs against a real ACME protocol server ([Pebble](https://github.com/letsencrypt/pebble), Let's Encrypt's own test implementation) and cryptographically verifies the served certificate's chain against Pebble's actual issuing root — not a mock, and not just "a response came back."
+Integration tests spawn real proxy processes against in-process backends on random ports, so they run in parallel and touch nothing outside the test. The ACME end-to-end test goes further: it runs against a real ACME protocol server ([Pebble](https://github.com/letsencrypt/pebble), Let's Encrypt's own test implementation) and cryptographically verifies the served certificate's chain against Pebble's actual issuing root: not a mock, and not just "a response came back."
 
-- [Benchmarking](bench/README.md) — Docker harness comparing torana against Caddy and nginx, with sample results
+- [Benchmarking](bench/README.md): Docker harness comparing torana against Caddy and nginx, with sample results
 - [v0.1 design notes](docs/plans/2026-04-11-torana-v0.1-implementation.md)
 
 ## Relationship to Caddy

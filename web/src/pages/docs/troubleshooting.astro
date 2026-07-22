@@ -14,7 +14,7 @@ import DocsLayout from "../../layouts/DocsLayout.astro";
   <p>Startup is fail-fast by design. The error on stderr says which check failed: an unparseable config, a listener address already in use, missing TLS material, or a rejected field (for example an <code>https://</code> upstream). Fix the config; torana never runs half-configured.</p>
 
   <h2>Clients get 502</h2>
-  <p><code>502 Bad Gateway</code> means the upstream connection failed — the upstream is down, refused the connection, or reset mid-request. Check <code>upstream_connection_errors</code> in metrics and the error log line naming the upstream.</p>
+  <p><code>502 Bad Gateway</code> means the upstream connection failed: the upstream is down, refused the connection, or reset mid-request. Check <code>upstream_connection_errors</code> in metrics and the error log line naming the upstream.</p>
 
   <h2>Clients get 504</h2>
   <p><code>504 Gateway Timeout</code> means the upstream accepted the connection but didn't return response headers within <code>route.timeout.total</code> (default 30s). Raise the timeout for slow endpoints or fix the upstream.</p>
@@ -23,7 +23,7 @@ import DocsLayout from "../../layouts/DocsLayout.astro";
   <p>If the new config fails validation, torana keeps the old one running and logs the reason at error level. Check the logs; fix; SIGHUP again. Also note listener changes need a restart (see <a href="../signals/">Signals</a>).</p>
 
   <h2>A config field seems ignored</h2>
-  <p>It probably is — deliberately. Fields for unimplemented features log a startup warning like <code>'when' expressions are not implemented yet</code>. The <a href="../configuration/">configuration table</a> is the source of truth for what's enforced.</p>
+  <p>It probably is, deliberately. Fields for unimplemented features log a startup warning like <code>'when' expressions are not implemented yet</code>. The <a href="../configuration/">configuration table</a> is the source of truth for what's enforced.</p>
 
   <p>Still stuck? <a href="https://github.com/abhinavcdev/torana/issues">Open an issue</a>.</p>
 </DocsLayout>

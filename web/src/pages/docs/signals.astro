@@ -25,7 +25,7 @@ import CodeBlock from "../../components/CodeBlock.astro";
 <Fragment set:html={`<span class="cm"># edit torana.toml, then:</span>
 kill -HUP $(pgrep torana)`} /></CodeBlock>
 
-  <div class="callout">Listeners themselves are bound once at startup — a reload updates routes, upstreams, and weights, but adding or removing a <code>[[listener]]</code> requires a restart. With graceful draining, a rolling restart behind an orchestrator is zero-dropped-requests anyway.</div>
+  <div class="callout">Listeners themselves are bound once at startup: a reload updates routes, upstreams, and weights, but adding or removing a <code>[[listener]]</code> requires a restart. With graceful draining, a rolling restart behind an orchestrator is zero-dropped-requests anyway.</div>
 
   <p>Next: <a href="../observability/">observability</a>.</p>
 </DocsLayout>

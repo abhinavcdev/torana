@@ -12,7 +12,7 @@ interface Props {
 const { title, description, active } = Astro.props;
 const canonicalURL = new URL(Astro.url.pathname, Astro.site);
 const ogImageURL = new URL("/torana/og-image.png", Astro.site);
-const siteTitle = title === "torana" ? title : `${title} — torana`;
+const siteTitle = title === "torana" ? title : `${title} · torana`;
 ---
 
 <!doctype html>
@@ -49,7 +49,7 @@ const siteTitle = title === "torana" ? title : `${title} — torana`;
       "name": "torana",
       "applicationCategory": "DeveloperApplication",
       "operatingSystem": "Linux, macOS",
-      "description": "A tiny reverse proxy written in Rust — HTTP/2, automatic HTTPS via ACME, mTLS, health checks, retries, and sandboxed WASM plugins in a single static binary.",
+      "description": "A tiny reverse proxy written in Rust, with HTTP/2, automatic HTTPS via ACME, mTLS, health checks, retries, and sandboxed WASM plugins in a single static binary.",
       "url": "https://abhinavcdev.github.io/torana/",
       "codeRepository": "https://github.com/abhinavcdev/torana",
       "license": "https://github.com/abhinavcdev/torana/blob/main/LICENSE-MIT",

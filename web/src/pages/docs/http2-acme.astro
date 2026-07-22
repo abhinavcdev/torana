@@ -12,10 +12,10 @@ import CodeBlock from "../../components/CodeBlock.astro";
   <p class="docs-sub">Modern TLS, with nothing extra to configure unless you want a private ACME server.</p>
 
   <h2>HTTP/2</h2>
-  <p>HTTPS listeners negotiate h2 automatically via ALPN — h2 offered first, falling back to http/1.1 on the same listener for clients that don't support it. Nothing to configure, and not feature-gated: hyper already ships the h2 builder. The proxy-to-upstream leg is always HTTP/1.1 regardless of what the client negotiated — forwarding the client's HTTP version through to an http/1.1-only upstream client doesn't work, which is exactly the bug torana's own h2 integration test caught during development.</p>
+  <p>HTTPS listeners negotiate h2 automatically via ALPN: h2 offered first, falling back to http/1.1 on the same listener for clients that don't support it. Nothing to configure, and not feature-gated: hyper already ships the h2 builder. The proxy-to-upstream leg is always HTTP/1.1 regardless of what the client negotiated. Forwarding the client's HTTP version through to an http/1.1-only upstream client doesn't work, which is exactly the bug torana's own h2 integration test caught during development.</p>
 
   <h2>Automatic HTTPS via ACME</h2>
-  <p>Build with <code>cargo build --release --features acme</code> (off by default — adds ~1.6&nbsp;MB via <code>rustls-acme</code>, which carries its own rustls stack internally). <code>listener.acme</code> replaces a static <code>tls_cert</code>/<code>tls_key</code> pair; certificates are obtained and renewed automatically via RFC 8555 using the TLS-ALPN-01 challenge, no separate port 80 listener needed. Not combinable with <code>tls_client_ca</code> (mTLS) on the same listener yet.</p>
+  <p>Build with <code>cargo build --release --features acme</code> (off by default; adds ~1.6&nbsp;MB via <code>rustls-acme</code>, which carries its own rustls stack internally). <code>listener.acme</code> replaces a static <code>tls_cert</code>/<code>tls_key</code> pair; certificates are obtained and renewed automatically via RFC 8555 using the TLS-ALPN-01 challenge, no separate port 80 listener needed. Not combinable with <code>tls_client_ca</code> (mTLS) on the same listener yet.</p>
 
   <CodeBlock
     label="automatic HTTPS"
@@ -30,9 +30,9 @@ contact_emails = [<span class="ac">"admin@example.com"</span>]
 cache_dir = <span class="ac">"./acme-cache"</span>
 <span class="cm"># staging = true   # use Let's Encrypt's staging directory while testing</span>`} /></CodeBlock>
 
-  <p><code>directory_url</code> targets a private ACME server instead of Let's Encrypt, and <code>ca_cert</code> trusts that server's CA if it isn't in the public web PKI — exactly how torana's own end-to-end test verifies against a local <a href="https://github.com/letsencrypt/pebble">Pebble</a> instance (Let's Encrypt's own ACME protocol test server) rather than a mock. That test proves a genuine RFC 8555 issuance occurred by checking the served certificate's chain against Pebble's real issuing root, with a negative control confirming the same request fails TLS verification without that trust anchor — see <code>scripts/test-acme-e2e.sh</code> and <code>torana/tests/acme_e2e.rs</code> in the repo.</p>
+  <p><code>directory_url</code> targets a private ACME server instead of Let's Encrypt, and <code>ca_cert</code> trusts that server's CA if it isn't in the public web PKI, exactly how torana's own end-to-end test verifies against a local <a href="https://github.com/letsencrypt/pebble">Pebble</a> instance (Let's Encrypt's own ACME protocol test server) rather than a mock. That test proves a genuine RFC 8555 issuance occurred by checking the served certificate's chain against Pebble's real issuing root, with a negative control confirming the same request fails TLS verification without that trust anchor; see <code>scripts/test-acme-e2e.sh</code> and <code>torana/tests/acme_e2e.rs</code> in the repo.</p>
 
-  <div class="callout">ACME issuance happens lazily on the first handshake for a domain and runs in a background task afterward for renewal — the listener is bound and accepting connections immediately, but the very first TLS handshake for a new domain blocks briefly on the real ACME order.</div>
+  <div class="callout">ACME issuance happens lazily on the first handshake for a domain and runs in a background task afterward for renewal. The listener is bound and accepting connections immediately, but the very first TLS handshake for a new domain blocks briefly on the real ACME order.</div>
 
   <p>Next: <a href="../security/">mTLS, header rewriting &amp; mirroring</a>.</p>
 </DocsLayout>

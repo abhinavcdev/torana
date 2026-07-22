@@ -6,13 +6,13 @@ import CodeBlock from "../../components/CodeBlock.astro";
 <DocsLayout
   current="observability"
   title="Observability"
-  description="torana's Prometheus metrics, /healthz endpoint, and structured JSON logs — what's exposed and how to scrape it."
+  description="torana's Prometheus metrics, /healthz endpoint, and structured JSON logs: what's exposed and how to scrape it."
 >
   <h1>Observability</h1>
   <p class="docs-sub">Prometheus metrics, health checks for orchestrators, and structured logs.</p>
 
   <h2>Endpoints</h2>
-  <p>The metrics listener (<code>global.metrics_addr</code>) serves two paths: <code>/metrics</code> (Prometheus text format) and <code>/healthz</code> (returns <code>200 ok</code> — wire it into liveness and readiness probes).</p>
+  <p>The metrics listener (<code>global.metrics_addr</code>) serves two paths: <code>/metrics</code> (Prometheus text format) and <code>/healthz</code> (returns <code>200 ok</code>; wire it into liveness and readiness probes).</p>
 
   <h2>Metrics</h2>
   <div class="table-scroll">

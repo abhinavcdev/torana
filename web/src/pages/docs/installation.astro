@@ -6,7 +6,7 @@ import CodeBlock from "../../components/CodeBlock.astro";
 <DocsLayout
   current="installation"
   title="Installation"
-  description="Install torana from source, Docker, or a prebuilt binary — Linux musl and macOS, x86_64 and arm64."
+  description="Install torana from source, Docker, or a prebuilt binary: Linux musl and macOS, x86_64 and arm64."
 >
   <h1>Installation</h1>
   <p class="docs-sub">Three ways to get torana running: build it, pull the Docker image, or grab a release binary.</p>
@@ -27,7 +27,7 @@ torana-latest-x86_64-unknown-linux-musl.tar.gz | tar xz
 ./torana --config torana.toml</CodeBlock>
 
   <h2>Docker</h2>
-  <p>The repo Dockerfile builds a static musl binary into a <code>FROM scratch</code> image — 5.3&nbsp;MB total:</p>
+  <p>The repo Dockerfile builds a static musl binary into a <code>FROM scratch</code> image, 5.3&nbsp;MB total:</p>
   <CodeBlock label="docker" copy={"docker build -t torana https://github.com/abhinavcdev/torana.git\ndocker run -p 8080:8080 -v $PWD/torana.toml:/etc/torana/torana.toml torana"}>
 docker build -t torana https://github.com/abhinavcdev/torana.git
 docker run -p 8080:8080 \

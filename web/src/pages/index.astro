@@ -7,18 +7,23 @@ const base = import.meta.env.BASE_URL;
 
 <BaseLayout
   title="torana"
-  description="torana is the smallest useful reverse proxy: a ~5.3 MB Rust binary with HTTP/2, automatic HTTPS via ACME, mTLS, health checks, retries, and sandboxed WASM plugins — no OpenSSL, no runtime."
+  description="torana is the smallest useful reverse proxy: a ~5.3 MB Rust binary with HTTP/2, automatic HTTPS via ACME, mTLS, health checks, retries, and sandboxed WASM plugins, with no OpenSSL and no runtime."
 >
   <main>
     <div class="wrap">
       <div class="hero">
         <div class="eyebrow">A reverse proxy in five megabytes</div>
         <h1>The smallest <em>useful</em> reverse proxy.</h1>
-        <p class="lede">torana terminates TLS (HTTP/1.1 and HTTP/2), balances load, drains connections gracefully, and streams traffic to your upstreams — from one static Rust binary with no runtime and no OpenSSL.</p>
-        <p class="meaning">torana&thinsp;·&thinsp;तोरण&thinsp;— the ceremonial gateway arch. A small structure everything passes through.</p>
+        <p class="lede">torana terminates TLS (HTTP/1.1 and HTTP/2), balances load, drains connections gracefully, and streams traffic to your upstreams, all from one static Rust binary with no runtime and no OpenSSL.</p>
+        <p class="meaning">torana&thinsp;·&thinsp;तोरण&thinsp;: the ceremonial gateway arch. A small structure everything passes through.</p>
         <div class="cta-row">
           <a class="btn btn-primary" href={`${base}docs/installation/`}>Install in 60 seconds</a>
           <a class="btn" href="https://github.com/abhinavcdev/torana">View source&nbsp;&#8599;</a>
+        </div>
+        <div class="hero-badges">
+          <span class="badge">MIT / Apache-2.0</span>
+          <span class="badge">Pure Rust, no OpenSSL</span>
+          <span class="badge">5.3&nbsp;MB static binary</span>
         </div>
       </div>
     </div>
@@ -37,11 +42,11 @@ const base = import.meta.env.BASE_URL;
         <div class="sec-head">
           <div class="eyebrow">Measured, not marketed</div>
           <h2>Faster than servers ten times its size.</h2>
-          <p>Same Docker network, same backend, same load generator. The harness ships in the repo — run <code>bench/bench.sh</code> and get your own numbers in two minutes.</p>
+          <p>Same Docker network, same backend, same load generator. The harness ships in the repo. Run <code>bench/bench.sh</code> and get your own numbers in two minutes.</p>
         </div>
         <div class="bench">
-          <div class="bench-panel">
-            <h3>Throughput — req/s, higher is better</h3>
+          <div class="bench-panel reveal">
+            <h3>Throughput (req/s, higher is better)</h3>
             <div class="bar-row hero-bar">
               <span class="who">torana</span>
               <div class="bar-track"><div class="bar-fill" style="width:100%"></div></div>
@@ -58,8 +63,8 @@ const base = import.meta.env.BASE_URL;
               <span class="val">1,193</span>
             </div>
           </div>
-          <div class="bench-panel">
-            <h3>Idle memory — MiB, lower is better</h3>
+          <div class="bench-panel reveal">
+            <h3>Idle memory (MiB, lower is better)</h3>
             <div class="bar-row hero-bar">
               <span class="who">torana</span>
               <div class="bar-track"><div class="bar-fill" style="width:25%"></div></div>
@@ -77,58 +82,58 @@ const base = import.meta.env.BASE_URL;
             </div>
           </div>
         </div>
-        <p class="bench-note">HTTP/1.1 plain forwarding, 64 connections, 15&nbsp;s, fortio inside one Docker network on a MacBook; nginx runs its stock config, and numbers drift a few percent between runs. Treat them as a relative comparison — then reproduce them with <code>./bench/bench.sh</code>.</p>
+        <p class="bench-note">HTTP/1.1 plain forwarding, 64 connections, 15&nbsp;s, fortio inside one Docker network on a MacBook; nginx runs its stock config, and numbers drift a few percent between runs. Treat them as a relative comparison, then reproduce them with <code>./bench/bench.sh</code>.</p>
       </section>
 
       <section id="features">
-        <div class="sec-head">
+        <div class="sec-head reveal">
           <div class="eyebrow">Honest by design</div>
-          <h2>What it does — and what it doesn't, yet.</h2>
+          <h2>What it does, and what it doesn't, yet.</h2>
           <p>Every config field is either enforced or warns loudly at startup. No silent ignoring, no feature claims the code can't back.</p>
         </div>
         <div class="two-col">
-          <div>
+          <div class="reveal">
             <p class="col-label">Shipping today</p>
             <ul class="plain-list">
-              <li><span class="tick">✓</span><span>HTTP/1.1 and HTTP/2 (client-facing), fully streamed bodies — no buffering</span></li>
+              <li><span class="tick">✓</span><span>HTTP/1.1 and HTTP/2 (client-facing), fully streamed bodies, no buffering</span></li>
               <li><span class="tick">✓</span><span>Host- and path-based routing across multiple routes, first match wins</span></li>
               <li><span class="tick">✓</span><span>TLS termination with rustls; pure Rust, no OpenSSL</span></li>
               <li><span class="tick">✓</span><span>Upstream keep-alive pooling, TCP_NODELAY on both legs</span></li>
               <li><span class="tick">✓</span><span>Weighted round-robin load balancing</span></li>
-              <li><span class="tick">✓</span><span>Active health checks — unhealthy upstreams are skipped, not blackholed</span></li>
+              <li><span class="tick">✓</span><span>Active health checks: unhealthy upstreams are skipped, not blackholed</span></li>
               <li><span class="tick">✓</span><span>Retries on connect failure for GET/HEAD/OPTIONS with no body</span></li>
-              <li><span class="tick">✓</span><span>Sandboxed WASM plugins, opt-in — fuel-limited, no host access at all</span></li>
-              <li><span class="tick">✓</span><span>mTLS — mandatory client certs, verified fingerprint forwarded, never spoofable</span></li>
-              <li><span class="tick">✓</span><span>Automatic HTTPS via ACME, opt-in — RFC 8555, Let's Encrypt or a private CA</span></li>
+              <li><span class="tick">✓</span><span>Sandboxed WASM plugins, opt-in: fuel-limited, no host access at all</span></li>
+              <li><span class="tick">✓</span><span>mTLS: mandatory client certs, verified fingerprint forwarded, never spoofable</span></li>
+              <li><span class="tick">✓</span><span>Automatic HTTPS via ACME, opt-in: RFC 8555, Let's Encrypt or a private CA</span></li>
               <li><span class="tick">✓</span><span>Header rewriting and traffic mirroring on GET/HEAD/OPTIONS</span></li>
               <li><span class="tick">✓</span><span>Zero-downtime reload on SIGHUP, validated before swap</span></li>
-              <li><span class="tick">✓</span><span>Graceful shutdown — in-flight requests finish before exit</span></li>
+              <li><span class="tick">✓</span><span>Graceful shutdown: in-flight requests finish before exit</span></li>
               <li><span class="tick">✓</span><span>Prometheus <code>/metrics</code>, <code>/healthz</code>, structured JSON logs</span></li>
-              <li><span class="tick">✓</span><span>Embeddable — the engine is a separate crate usable inside your own server</span></li>
+              <li><span class="tick">✓</span><span>Embeddable: the engine is a separate crate usable inside your own server</span></li>
             </ul>
           </div>
-          <div>
+          <div class="reveal">
             <p class="col-label">On the roadmap</p>
             <ul class="plain-list">
-              <li><span class="tick no">—</span><span>HTTP/3</span></li>
-              <li><span class="tick no">—</span><span>HTTP/2 or TLS to upstreams — the proxy-to-upstream leg is always plain HTTP/1.1</span></li>
-              <li><span class="tick no">—</span><span>Circuit breaking — retries and health checks exist; a faster-ejecting breaker doesn't yet</span></li>
-              <li><span class="tick no">—</span><span>mTLS combined with ACME on the same listener</span></li>
+              <li><span class="tick no">✕</span><span>HTTP/3</span></li>
+              <li><span class="tick no">✕</span><span>HTTP/2 or TLS to upstreams (the proxy-to-upstream leg is always plain HTTP/1.1)</span></li>
+              <li><span class="tick no">✕</span><span>Circuit breaking (retries and health checks exist; a faster-ejecting breaker doesn't yet)</span></li>
+              <li><span class="tick no">✕</span><span>mTLS combined with ACME on the same listener</span></li>
             </ul>
           </div>
         </div>
       </section>
 
       <section id="uses">
-        <div class="sec-head">
+        <div class="sec-head reveal">
           <div class="eyebrow">Where 5 MB wins</div>
           <h2>Built for the places big proxies don't fit.</h2>
         </div>
         <div class="cases">
-          <div class="case"><span class="tag">Sidecar</span><h3>Kubernetes sidecars</h3><p>TLS termination and RED metrics next to your app container for 5.5&nbsp;MiB of memory — not a service mesh's eighty. Probes wire straight into <code>/healthz</code>.</p></div>
+          <div class="case"><span class="tag">Sidecar</span><h3>Kubernetes sidecars</h3><p>TLS termination and RED metrics next to your app container for 5.5&nbsp;MiB of memory, not a service mesh's eighty. Probes wire straight into <code>/healthz</code>.</p></div>
           <div class="case"><span class="tag">Edge</span><h3>Routers, Pis, and edge boxes</h3><p>A real reverse proxy on hardware where RAM is measured in megabytes and every binary ships over a slow link.</p></div>
           <div class="case"><span class="tag">Cold start</span><h3>Scale-to-zero platforms</h3><p>Millisecond startup means the proxy is never the reason your function's cold start got slower.</p></div>
-          <div class="case"><span class="tag">Canary</span><h3>Weighted rollouts</h3><p>Send 5% of traffic to the new build with two lines of TOML and a SIGHUP — no orchestration required.</p></div>
+          <div class="case"><span class="tag">Canary</span><h3>Weighted rollouts</h3><p>Send 5% of traffic to the new build with two lines of TOML and a SIGHUP, no orchestration required.</p></div>
           <div class="case"><span class="tag">Compose</span><h3>docker-compose front doors</h3><p>One 5.5&nbsp;MB scratch image routes your whole dev stack. Smaller than most base images' package index.</p></div>
           <div class="case"><span class="tag">Public HTTPS</span><h3>Internet-facing services</h3><p>HTTP/2 and automatic ACME certificates on a binary a tenth the size of a full web server.</p></div>
           <div class="case"><span class="tag">Metrics</span><h3>Instrumenting legacy services</h3><p>Put Prometheus request metrics in front of the service nobody dares recompile.</p></div>
@@ -139,7 +144,7 @@ const base = import.meta.env.BASE_URL;
       </section>
 
       <section id="install">
-        <div class="sec-head">
+        <div class="sec-head reveal">
           <div class="eyebrow">Install</div>
           <h2>Running in under a minute.</h2>
           <p>Build from source with stable Rust 1.75+, use the Docker recipe, or grab a prebuilt binary from <a href="https://github.com/abhinavcdev/torana/releases">releases</a>. Full walkthroughs live in the <a href={`${base}docs/`}>docs</a>.</p>
@@ -154,7 +159,7 @@ const base = import.meta.env.BASE_URL;
             <Fragment set:html={`docker build -t torana .\ndocker run -p 8080:8080 \\\n  -v $PWD/torana.toml:/etc/torana/torana.toml torana`} />
           </CodeBlock>
 
-          <CodeBlock label="torana.toml — HTTP/2 + automatic HTTPS" span copy={'[[listener]]\naddr = "0.0.0.0:443"\nprotocol = "https"\n\n[listener.acme]\ndomains = ["example.com"]\ncontact_emails = ["admin@example.com"]\ncache_dir = "./acme-cache"\n\n[[route]]\nname = "default"\nupstream = [{ addr = "http://127.0.0.1:3000" }]'}>
+          <CodeBlock label="torana.toml · HTTP/2 + automatic HTTPS" span copy={'[[listener]]\naddr = "0.0.0.0:443"\nprotocol = "https"\n\n[listener.acme]\ndomains = ["example.com"]\ncontact_emails = ["admin@example.com"]\ncache_dir = "./acme-cache"\n\n[[route]]\nname = "default"\nupstream = [{ addr = "http://127.0.0.1:3000" }]'}>
             <Fragment set:html={`<span class="cm">[[listener]]</span>\naddr = <span class="ac">"0.0.0.0:443"</span>\nprotocol = <span class="ac">"https"</span>\n\n<span class="cm">[listener.acme]</span>            <span class="cm"># h2 is automatic, nothing to set</span>\ndomains = [<span class="ac">"example.com"</span>]\ncontact_emails = [<span class="ac">"admin@example.com"</span>]\ncache_dir = <span class="ac">"./acme-cache"</span>\n\n<span class="cm">[[route]]</span>\nname = <span class="ac">"default"</span>\nupstream = [{ addr = <span class="ac">"http://127.0.0.1:3000"</span> }]`} />
           </CodeBlock>
 
@@ -167,3 +172,23 @@ const base = import.meta.env.BASE_URL;
     </div>
   </main>
 </BaseLayout>
+
+<script>
+  const revealed = document.querySelectorAll(".reveal");
+  if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+    revealed.forEach((el) => el.classList.add("in"));
+  } else {
+    const io = new IntersectionObserver(
+      (entries) => {
+        for (const entry of entries) {
+          if (entry.isIntersecting) {
+            entry.target.classList.add("in");
+            io.unobserve(entry.target);
+          }
+        }
+      },
+      { threshold: 0.15, rootMargin: "0px 0px -40px 0px" }
+    );
+    revealed.forEach((el) => io.observe(el));
+  }
+</script>

@@ -6,13 +6,13 @@ import CodeBlock from "../../components/CodeBlock.astro";
 <DocsLayout
   current="security"
   title="mTLS, header rewriting & mirroring"
-  description="Require and verify client certificates with mTLS, rewrite request and response headers, and mirror a sampled fraction of traffic to a second upstream — all without buffering request bodies."
+  description="Require and verify client certificates with mTLS, rewrite request and response headers, and mirror a sampled fraction of traffic to a second upstream, all without buffering request bodies."
 >
   <h1>mTLS, header rewriting &amp; mirroring</h1>
   <p class="docs-sub">Traffic control and identity verification, all restricted to requests that are safe to duplicate or replay.</p>
 
   <h2>mTLS</h2>
-  <p>Setting <code>tls_client_ca</code> on an <code>https</code> listener makes client certificates mandatory — a connection presenting no certificate, or one not signed by that CA, is rejected during the TLS handshake, before any HTTP request is processed. On success, torana forwards a SHA-256 fingerprint of the verified certificate to the upstream as <code>X-Client-Cert-Fingerprint</code>. That header is always stripped from the client's original request first, so it can never be spoofed by a client connecting over plain HTTP or a non-mTLS listener.</p>
+  <p>Setting <code>tls_client_ca</code> on an <code>https</code> listener makes client certificates mandatory: a connection presenting no certificate, or one not signed by that CA, is rejected during the TLS handshake, before any HTTP request is processed. On success, torana forwards a SHA-256 fingerprint of the verified certificate to the upstream as <code>X-Client-Cert-Fingerprint</code>. That header is always stripped from the client's original request first, so it can never be spoofed by a client connecting over plain HTTP or a non-mTLS listener.</p>
   <CodeBlock
     label="require client certificates"
     copy={'[[listener]]\naddr = "0.0.0.0:8443"\nprotocol = "https"\ntls_cert = "./certs/server.crt"\ntls_key = "./certs/server.key"\ntls_client_ca = "./certs/ca.crt"'}
@@ -33,7 +33,7 @@ request = { <span class="ac">"x-internal-token"</span> = <span class="ac">"share
 response = { <span class="ac">"server"</span> = <span class="ac">""</span> }   <span class="cm"># "" removes it</span>`} /></CodeBlock>
 
   <h2>Traffic mirroring</h2>
-  <p>Sends a duplicate, fire-and-forget copy of eligible requests to <code>mirror.addr</code> — the mirror's response (or failure, or timeout) never affects the real one. <code>rate</code> is 0-100 (default 100) and uses a low-cost timestamp-based approximation, not a cryptographic RNG — fine for sampling traffic, not for anything security-sensitive. Only <code>GET</code>/<code>HEAD</code>/<code>OPTIONS</code> requests with no body are mirrored, for the same reason retries are restricted the same way: duplicating a request that might carry a side effect risks running it twice.</p>
+  <p>Sends a duplicate, fire-and-forget copy of eligible requests to <code>mirror.addr</code>: the mirror's response (or failure, or timeout) never affects the real one. <code>rate</code> is 0-100 (default 100) and uses a low-cost timestamp-based approximation, not a cryptographic RNG, fine for sampling traffic, not for anything security-sensitive. Only <code>GET</code>/<code>HEAD</code>/<code>OPTIONS</code> requests with no body are mirrored, for the same reason retries are restricted the same way: duplicating a request that might carry a side effect risks running it twice.</p>
   <CodeBlock
     label="mirror 10% of eligible traffic"
     copy={'[route.mirror]\naddr = "http://127.0.0.1:3999"\nrate = 10'}

@@ -1,6 +1,12 @@
 <div class="flow-stage wrap">
-  <canvas id="flow" aria-label="Animation: requests flowing from clients through the torana gate to weighted upstreams"></canvas>
-  <div class="flow-caption">live simulation — weighted round-robin, 60 / 30 / 10 &nbsp;·&nbsp; move your cursor to disturb the traffic, click for a burst</div>
+  <div class="flow-frame">
+    <canvas id="flow" aria-label="Animation: requests flowing from clients through the torana gate, splitting across three weighted upstreams"></canvas>
+    <div class="flow-readout" aria-hidden="true">
+      <span class="flow-count" id="flow-count">0</span>
+      <span class="flow-count-label">requests routed live</span>
+    </div>
+  </div>
+  <div class="flow-caption">Weighted round robin at 60 / 30 / 10. Move your cursor to bend the flow, click for a burst.</div>
 </div>
 
 <script>
@@ -8,13 +14,14 @@
     "use strict";
 
     const canvas = document.getElementById("flow") as HTMLCanvasElement | null;
-    if (!canvas) return;
+    const countEl = document.getElementById("flow-count");
+    if (!canvas || !countEl) return;
     const ctx = canvas.getContext("2d");
     if (!ctx) return;
     const reduced = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
 
     let W = 0, H = 0, DPR = 1;
-    let theme = { ink: "", muted: "", line: "", accent: "", surface: "" };
+    let theme = { ink: "", muted: "", line: "", accent: "", accentInk: "", surface: "", ground: "" };
 
     function readTheme() {
       const cs = getComputedStyle(document.documentElement);
@@ -23,7 +30,9 @@
         muted: cs.getPropertyValue("--muted").trim(),
         line: cs.getPropertyValue("--line").trim(),
         accent: cs.getPropertyValue("--accent-bright").trim(),
+        accentInk: cs.getPropertyValue("--accent-ink").trim(),
         surface: cs.getPropertyValue("--surface").trim(),
+        ground: cs.getPropertyValue("--ground").trim(),
       };
     }
     readTheme();
@@ -40,19 +49,33 @@
       layout();
     }
 
-    type Node = { x: number; y: number; w: number; pulse: number; label: string };
+    type Node = {
+      x: number; y: number; cardH: number; pulse: number;
+      label: string; pct: string;
+      c1x: number; c1y: number; c2x: number; c2y: number;
+    };
     let gate = { x: 0, y: 0, half: 0 };
-    let nodes: Node[] = [];
     const WEIGHTS = [0.6, 0.3, 0.1];
+    let nodes: Node[] = [];
 
     function layout() {
-      gate = { x: W * 0.46, y: H * 0.52, half: Math.min(52, H * 0.16) };
-      const nx = W * 0.86;
-      nodes = [
-        { x: nx, y: H * 0.24, w: WEIGHTS[0], pulse: 0, label: "u1 · 60" },
-        { x: nx, y: H * 0.52, w: WEIGHTS[1], pulse: 0, label: "u2 · 30" },
-        { x: nx, y: H * 0.8, w: WEIGHTS[2], pulse: 0, label: "u3 · 10" },
-      ];
+      gate = { x: W * 0.4, y: H * 0.52, half: Math.min(56, H * 0.18) };
+      const nx = W * 0.87;
+      const ys = [H * 0.22, H * 0.52, H * 0.82];
+      const labels = ["Upstream 1", "Upstream 2", "Upstream 3"];
+      nodes = WEIGHTS.map((w, i) => {
+        const y = ys[i];
+        const x = nx;
+        return {
+          x, y,
+          cardH: 24 + w * 58,
+          pulse: 0,
+          label: labels[i],
+          pct: Math.round(w * 100) + "%",
+          c1x: gate.x + (x - gate.x) * 0.42, c1y: gate.y,
+          c2x: gate.x + (x - gate.x) * 0.78, c2y: y,
+        };
+      });
     }
 
     function pickNode() {
@@ -60,91 +83,105 @@
       return r < WEIGHTS[0] ? 0 : r < WEIGHTS[0] + WEIGHTS[1] ? 1 : 2;
     }
 
+    function cubic(p0: number, p1: number, p2: number, p3: number, t: number) {
+      const mt = 1 - t;
+      return mt * mt * mt * p0 + 3 * mt * mt * t * p1 + 3 * mt * t * t * p2 + t * t * t * p3;
+    }
+
+    const U_GATE = 0.42;
+
     type Particle = {
-      x: number; y: number; vx: number; vy: number;
-      phase: number; node: number; seed: number;
+      spawnY: number; node: number; u: number; speed: number;
+      c1x: number; c1y: number; c2x: number; c2y: number;
+      jx: number; jy: number; jvx: number; jvy: number;
       trail: { x: number; y: number }[];
     };
     let particles: Particle[] = [];
-    const MAX_P = 46;
+    const MAX_P = 42;
     const mouse = { x: -9999, y: -9999 };
+    let parallaxX = 0, parallaxY = 0;
+    let routed = 0;
+    let pings: { t: number }[] = [];
 
-    function spawn(px?: number): Particle {
+    function spawn(startU?: number): Particle {
+      const spawnY = H * (0.12 + 0.76 * Math.random());
       return {
-        x: px !== undefined ? px : -8,
-        y: H * (0.15 + 0.7 * Math.random()),
-        vx: 1.2 + Math.random() * 0.8,
-        vy: (Math.random() - 0.5) * 0.6,
-        phase: 0,
+        spawnY,
         node: pickNode(),
-        seed: Math.random() * Math.PI * 2,
+        u: startU ?? 0,
+        speed: 0.0068 + Math.random() * 0.0026,
+        c1x: gate.x * 0.3, c1y: spawnY,
+        c2x: gate.x * 0.74, c2y: gate.y + (spawnY - gate.y) * 0.16,
+        jx: 0, jy: 0, jvx: 0, jvy: 0,
         trail: [],
       };
     }
     function fillParticles() {
       particles = [];
-      for (let i = 0; i < MAX_P; i++) particles.push(spawn(Math.random() * W * 0.4));
+      for (let i = 0; i < MAX_P; i++) particles.push(spawn(Math.random() * U_GATE * 0.9));
     }
 
-    const MAX_SPEED = 3.1, MAX_FORCE = 0.14;
-    function steer(p: Particle, tx: number, ty: number, arriveR?: number) {
-      const dx = tx - p.x, dy = ty - p.y;
-      const d = Math.sqrt(dx * dx + dy * dy) || 1;
-      let speed = MAX_SPEED;
-      if (arriveR && d < arriveR) speed = MAX_SPEED * (d / arriveR);
-      let ax = (dx / d) * speed - p.vx;
-      let ay = (dy / d) * speed - p.vy;
-      const a = Math.sqrt(ax * ax + ay * ay) || 1;
-      if (a > MAX_FORCE) { ax = (ax / a) * MAX_FORCE; ay = (ay / a) * MAX_FORCE; }
-      p.vx += ax; p.vy += ay;
+    function basePoint(p: Particle) {
+      if (p.u < U_GATE) {
+        const t = p.u / U_GATE;
+        return {
+          x: cubic(-10, p.c1x, p.c2x, gate.x, t),
+          y: cubic(p.spawnY, p.c1y, p.c2y, gate.y, t),
+        };
+      }
+      const n = nodes[p.node];
+      const t = (p.u - U_GATE) / (1 - U_GATE);
+      return {
+        x: cubic(gate.x, n.c1x, n.c2x, n.x, t),
+        y: cubic(gate.y, n.c1y, n.c2y, n.y, t),
+      };
     }
 
     let t = 0;
     function step() {
       t += 0.016;
+
+      parallaxX += ((mouse.x > -9000 ? ((mouse.x - W / 2) / W) * 10 : 0) - parallaxX) * 0.06;
+      parallaxY += ((mouse.y > -9000 ? ((mouse.y - H / 2) / H) * 8 : 0) - parallaxY) * 0.06;
+
       for (let i = particles.length - 1; i >= 0; i--) {
         const p = particles[i];
+        const wasBeforeGate = p.u < U_GATE;
+        p.u += p.speed;
 
-        if (p.phase === 0) {
-          steer(p, gate.x, gate.y + Math.sin(p.seed + t * 1.7) * gate.half * 0.35, 90);
-          if (p.x >= gate.x - 2) p.phase = 1;
-        } else {
-          const n = nodes[p.node];
-          steer(p, n.x, n.y, 60);
-          const ddx = n.x - p.x, ddy = n.y - p.y;
-          if (ddx * ddx + ddy * ddy < 64) {
-            n.pulse = 1;
-            particles[i] = spawn();
-            continue;
-          }
+        if (wasBeforeGate && p.u >= U_GATE) {
+          pings.push({ t: 0 });
+        }
+        if (p.u >= 1) {
+          nodes[p.node].pulse = 1;
+          routed++;
+          particles[i] = spawn();
+          continue;
         }
 
-        p.vy += Math.sin(p.seed * 3 + t * 2.2) * 0.02;
+        const base = basePoint(p);
 
-        const mx = p.x - mouse.x, my = p.y - mouse.y;
+        const mx = base.x - mouse.x, my = base.y - mouse.y;
         const md2 = mx * mx + my * my;
-        if (md2 < 5600 && md2 > 0.01) {
+        if (md2 < 6400 && md2 > 0.01) {
           const md = Math.sqrt(md2);
-          const f = (1 - md / 75) * 0.9;
-          p.vx += (mx / md) * f;
-          p.vy += (my / md) * f;
+          const f = (1 - md / 80) * 2.4;
+          p.jvx += (mx / md) * f;
+          p.jvy += (my / md) * f;
         }
+        p.jvx *= 0.88; p.jvy *= 0.88;
+        p.jx += p.jvx; p.jy += p.jvy;
+        p.jx *= 0.94; p.jy *= 0.94;
 
-        if (p.phase === 0 && p.x > gate.x - 10 && p.x < gate.x + 4 && Math.abs(p.y - gate.y) > gate.half) {
-          p.vx = -Math.abs(p.vx) * 0.55;
-          p.x = gate.x - 10;
-        }
-
-        const sp = Math.sqrt(p.vx * p.vx + p.vy * p.vy);
-        if (sp > MAX_SPEED) { p.vx = (p.vx / sp) * MAX_SPEED; p.vy = (p.vy / sp) * MAX_SPEED; }
-        p.x += p.vx; p.y += p.vy;
-
-        p.trail.push({ x: p.x, y: p.y });
-        if (p.trail.length > 9) p.trail.shift();
-
-        if (p.x > W + 12 || p.y < -20 || p.y > H + 20) particles[i] = spawn();
+        const drawn = { x: base.x + p.jx, y: base.y + p.jy };
+        p.trail.push(drawn);
+        if (p.trail.length > 7) p.trail.shift();
       }
-      for (const n of nodes) n.pulse *= 0.92;
+      for (const n of nodes) n.pulse *= 0.91;
+      for (let i = pings.length - 1; i >= 0; i--) {
+        pings[i].t += 0.045;
+        if (pings[i].t >= 1) pings.splice(i, 1);
+      }
     }
 
     function rr(x: number, y: number, w: number, h: number, r: number) {
@@ -154,66 +191,172 @@
       ctx!.fill();
     }
 
+    function drawBackdrop() {
+      const step = 26;
+      ctx!.fillStyle = theme.line;
+      ctx!.globalAlpha = 0.4;
+      const ox = parallaxX * -0.6, oy = parallaxY * -0.6;
+      for (let gx = ((ox % step) + step) % step; gx < W; gx += step) {
+        for (let gy = ((oy % step) + step) % step; gy < H; gy += step) {
+          ctx!.beginPath();
+          ctx!.arc(gx, gy, 1, 0, Math.PI * 2);
+          ctx!.fill();
+        }
+      }
+      ctx!.globalAlpha = 1;
+    }
+
+    function drawLanes() {
+      for (const n of nodes) {
+        ctx!.save();
+        ctx!.strokeStyle = theme.accent;
+        ctx!.lineWidth = Math.max(3, n.cardH * 0.16);
+        ctx!.globalAlpha = 0.08;
+        ctx!.beginPath();
+        ctx!.moveTo(gate.x, gate.y);
+        ctx!.bezierCurveTo(n.c1x, n.c1y, n.c2x, n.c2y, n.x, n.y);
+        ctx!.stroke();
+        ctx!.restore();
+
+        ctx!.save();
+        ctx!.strokeStyle = theme.accent;
+        ctx!.lineWidth = 1.4;
+        ctx!.globalAlpha = 0.5;
+        ctx!.setLineDash([2, 9]);
+        ctx!.lineDashOffset = reduced ? 0 : -t * 34;
+        ctx!.beginPath();
+        ctx!.moveTo(gate.x, gate.y);
+        ctx!.bezierCurveTo(n.c1x, n.c1y, n.c2x, n.c2y, n.x, n.y);
+        ctx!.stroke();
+        ctx!.restore();
+      }
+    }
+
     function drawGate() {
+      const glowR = 70 + Math.sin(t * 1.1) * 6;
+      const glow = ctx!.createRadialGradient(gate.x, gate.y, 0, gate.x, gate.y, glowR);
+      glow.addColorStop(0, color_mix(theme.accent, 0.22));
+      glow.addColorStop(1, color_mix(theme.accent, 0));
+      ctx!.fillStyle = glow;
+      ctx!.beginPath();
+      ctx!.arc(gate.x, gate.y, glowR, 0, Math.PI * 2);
+      ctx!.fill();
+
       const ph = gate.half;
-      ctx!.fillStyle = theme.accent;
-      rr(gate.x - 38, 12, 76, 7, 3.5);
-      rr(gate.x - 29, 26, 58, 5.5, 2.75);
+      const beamGrad = ctx!.createLinearGradient(gate.x - 40, 0, gate.x + 40, 0);
+      beamGrad.addColorStop(0, theme.accentInk);
+      beamGrad.addColorStop(0.5, theme.accent);
+      beamGrad.addColorStop(1, theme.accentInk);
+      ctx!.fillStyle = beamGrad;
+      rr(gate.x - 40, 10, 80, 7.5, 3.5);
+      rr(gate.x - 30, 24, 60, 5.5, 2.75);
+
       ctx!.fillStyle = theme.ink;
-      rr(gate.x - 3.5, 40, 7, Math.max(0, gate.y - ph - 40), 3);
+      ctx!.globalAlpha = 0.85;
+      rr(gate.x - 3.5, 38, 7, Math.max(0, gate.y - ph - 38), 3);
       rr(gate.x - 3.5, gate.y + ph, 7, Math.max(0, H - 30 - (gate.y + ph)), 3);
+      ctx!.globalAlpha = 1;
+
+      for (const ping of pings) {
+        ctx!.strokeStyle = theme.accent;
+        ctx!.globalAlpha = (1 - ping.t) * 0.5;
+        ctx!.lineWidth = 1.5;
+        ctx!.beginPath();
+        ctx!.arc(gate.x, gate.y, 10 + ping.t * 46, 0, Math.PI * 2);
+        ctx!.stroke();
+        ctx!.globalAlpha = 1;
+      }
+
       ctx!.fillStyle = theme.muted;
-      ctx!.font = "10.5px ui-monospace, Menlo, monospace";
+      ctx!.font = "600 10.5px ui-monospace, Menlo, monospace";
       ctx!.textAlign = "center";
-      ctx!.fillText("torana", gate.x, H - 12);
+      ctx!.letterSpacing = "0.04em";
+      ctx!.fillText("TORANA", gate.x, H - 12);
+      ctx!.letterSpacing = "0px";
+    }
+
+    function color_mix(hex: string, alpha: number) {
+      const h = hex.replace("#", "");
+      if (h.length !== 6) return hex;
+      const r = parseInt(h.slice(0, 2), 16), g = parseInt(h.slice(2, 4), 16), b = parseInt(h.slice(4, 6), 16);
+      return `rgba(${r}, ${g}, ${b}, ${alpha})`;
+    }
+
+    function drawNodes() {
+      for (const n of nodes) {
+        const w = 46, h = n.cardH;
+        const x0 = n.x - w / 2, y0 = n.y - h / 2;
+
+        if (n.pulse > 0.04) {
+          ctx!.strokeStyle = theme.accent;
+          ctx!.globalAlpha = n.pulse * 0.7;
+          ctx!.beginPath();
+          ctx!.roundRect(x0 - 5 * n.pulse, y0 - 5 * n.pulse, w + 10 * n.pulse, h + 10 * n.pulse, 10);
+          ctx!.stroke();
+          ctx!.globalAlpha = 1;
+        }
+
+        ctx!.save();
+        ctx!.shadowColor = color_mix(theme.ink, 0.16);
+        ctx!.shadowBlur = 10;
+        ctx!.shadowOffsetY = 3;
+        ctx!.fillStyle = theme.surface;
+        ctx!.beginPath();
+        ctx!.roundRect(x0, y0, w, h, 8);
+        ctx!.fill();
+        ctx!.restore();
+
+        ctx!.strokeStyle = theme.line;
+        ctx!.lineWidth = 1;
+        ctx!.beginPath();
+        ctx!.roundRect(x0, y0, w, h, 8);
+        ctx!.stroke();
+
+        ctx!.fillStyle = theme.accent;
+        rr(x0, y0, 4, h, 2);
+
+        ctx!.fillStyle = theme.ink;
+        ctx!.font = "700 12px ui-monospace, Menlo, monospace";
+        ctx!.textAlign = "center";
+        ctx!.fillText(n.pct, n.x + 2, n.y + 4);
+
+        ctx!.fillStyle = theme.muted;
+        ctx!.font = "10px ui-monospace, Menlo, monospace";
+        ctx!.fillText(n.label, n.x, n.y + h / 2 + 15);
+      }
     }
 
     function draw() {
       ctx!.clearRect(0, 0, W, H);
-
-      for (const n of nodes) {
-        ctx!.fillStyle = theme.surface;
-        ctx!.strokeStyle = theme.line;
-        ctx!.lineWidth = 1;
-        ctx!.beginPath();
-        ctx!.roundRect(n.x - 14, n.y - 14, 28, 28, 7);
-        ctx!.fill(); ctx!.stroke();
-        if (n.pulse > 0.05) {
-          ctx!.strokeStyle = theme.accent;
-          ctx!.globalAlpha = n.pulse;
-          ctx!.beginPath();
-          ctx!.roundRect(n.x - 14 - 4 * (1 - n.pulse), n.y - 14 - 4 * (1 - n.pulse), 28 + 8 * (1 - n.pulse), 28 + 8 * (1 - n.pulse), 9);
-          ctx!.stroke();
-          ctx!.globalAlpha = 1;
-        }
-        ctx!.fillStyle = theme.accent;
-        ctx!.beginPath();
-        ctx!.arc(n.x, n.y, 3, 0, Math.PI * 2);
-        ctx!.fill();
-        ctx!.fillStyle = theme.muted;
-        ctx!.font = "10.5px ui-monospace, Menlo, monospace";
-        ctx!.textAlign = "center";
-        ctx!.fillText(n.label, n.x, n.y + 30);
-      }
+      drawBackdrop();
+      drawLanes();
 
       for (const p of particles) {
         for (let j = 1; j < p.trail.length; j++) {
           ctx!.strokeStyle = theme.accent;
-          ctx!.globalAlpha = (j / p.trail.length) * 0.28;
-          ctx!.lineWidth = 1.6;
+          ctx!.globalAlpha = (j / p.trail.length) * 0.35;
+          ctx!.lineWidth = 2;
           ctx!.beginPath();
           ctx!.moveTo(p.trail[j - 1].x, p.trail[j - 1].y);
           ctx!.lineTo(p.trail[j].x, p.trail[j].y);
           ctx!.stroke();
         }
         ctx!.globalAlpha = 1;
-        ctx!.fillStyle = theme.accent;
-        ctx!.beginPath();
-        ctx!.arc(p.x, p.y, 2.6, 0, Math.PI * 2);
-        ctx!.fill();
+        const last = p.trail[p.trail.length - 1];
+        if (last) {
+          ctx!.save();
+          ctx!.shadowColor = theme.accent;
+          ctx!.shadowBlur = 8;
+          ctx!.fillStyle = theme.accent;
+          ctx!.beginPath();
+          ctx!.arc(last.x, last.y, 2.8, 0, Math.PI * 2);
+          ctx!.fill();
+          ctx!.restore();
+        }
       }
 
       drawGate();
+      drawNodes();
 
       ctx!.fillStyle = theme.muted;
       ctx!.font = "10.5px ui-monospace, Menlo, monospace";
@@ -221,10 +364,16 @@
       ctx!.fillText("clients", 8, H - 12);
     }
 
+    let frameSkip = 0;
+    function updateCounter() {
+      countEl!.textContent = routed.toLocaleString("en-US");
+    }
+
     let running = false, rafId = 0;
     function loop() {
       step();
       draw();
+      if (++frameSkip % 6 === 0) updateCounter();
       rafId = requestAnimationFrame(loop);
     }
     function start() { if (!running && !reduced) { running = true; rafId = requestAnimationFrame(loop); } }
@@ -237,7 +386,7 @@
     });
     canvas.addEventListener("pointerleave", () => { mouse.x = -9999; mouse.y = -9999; });
     canvas.addEventListener("click", () => {
-      for (let i = 0; i < 12 && particles.length < 90; i++) particles.push(spawn());
+      for (let i = 0; i < 10 && particles.length < 80; i++) particles.push(spawn(Math.random() * 0.08));
     });
 
     document.addEventListener("visibilitychange", () => {
@@ -249,13 +398,14 @@
 
     window.addEventListener("resize", () => {
       resize();
-      if (reduced) { step(); draw(); }
+      if (reduced) { draw(); }
     });
     resize();
     fillParticles();
     if (reduced) {
-      for (let i = 0; i < 240; i++) step();
+      for (let i = 0; i < 200; i++) step();
       draw();
+      updateCounter();
     } else {
       start();
     }
