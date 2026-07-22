@@ -18,11 +18,11 @@ rustls-pemfile = "2.1"
 tokio-rustls = "0.26"
 ring = "0.17"
 serde = { version = "1.0", features = ["derive"] }
-toml = "0.8"
+toml = "0.9"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["json", "env-filter"] }
 prometheus = "0.14"
-thiserror = "1.0"
+thiserror = "2.0"
 anyhow = "1.0"
 wasmtime = { version = "47", optional = true }
 rustls-acme = { version = "0.15", default-features = false, features = ["ring", "tokio", "webpki-roots"], optional = true }
@@ -38,4 +38,4 @@ plugins = ["dep:wasmtime"]
 acme = ["dep:rustls-acme", "dep:tokio-util", "dep:futures"]
 
 [dev-dependencies]
-rcgen = "0.13"
+rcgen = "0.14"

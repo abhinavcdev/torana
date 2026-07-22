@@ -26,4 +26,4 @@ acme = ["torana-core/acme"]
 
 [dev-dependencies]
 reqwest = { version = "0.13", features = ["blocking", "rustls"] }
-rcgen = "0.13"
+rcgen = "0.14"
