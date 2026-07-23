@@ -51,5 +51,23 @@ volumes:
 
   <div class="callout">Expose <code>metrics_addr</code> as <code>0.0.0.0:9090</code> inside containers so probes and scrapers can reach it; keep it on <code>127.0.0.1</code> when the proxy shares a network namespace with its scraper.</div>
 
+  <h2>Bare VPS with systemd</h2>
+  <p>No container runtime needed: torana is a static binary, so a plain systemd unit is the whole story. Run it as a dedicated non-root user and grant <code>CAP_NET_BIND_SERVICE</code> instead of root when binding <code>:443</code> directly.</p>
+  <CodeBlock
+    label="/etc/systemd/system/torana.service"
+    copy={'[Service]\nUser=torana\nGroup=torana\nExecStart=/usr/local/bin/torana --config /etc/torana/torana.toml\nExecReload=/bin/kill -HUP $MAINPID\nRestart=on-failure\nAmbientCapabilities=CAP_NET_BIND_SERVICE\nCapabilityBoundingSet=CAP_NET_BIND_SERVICE\nNoNewPrivileges=true\nProtectSystem=strict\nReadWritePaths=/var/lib/torana'}
+  ><Fragment set:html={`[Service]
+User=torana
+Group=torana
+ExecStart=/usr/local/bin/torana --config /etc/torana/torana.toml
+ExecReload=/bin/kill -HUP $MAINPID
+Restart=on-failure
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+NoNewPrivileges=true
+ProtectSystem=strict
+ReadWritePaths=/var/lib/torana`} /></CodeBlock>
+  <p>A full working example — a real static frontend and a separate API backend, both proxied through one <code>torana.toml</code>, with systemd units for all three and a step-by-step guide from a $4/mo VPS to a browser-trusted certificate — lives in <a href="https://github.com/abhinavcdev/torana/tree/main/examples/full-stack-demo">examples/full-stack-demo</a> in the repo.</p>
+
   <p>Next: <a href="../benchmarking/">benchmarking</a>.</p>
 </DocsLayout>

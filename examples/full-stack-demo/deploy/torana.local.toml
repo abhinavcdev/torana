@@ -1,0 +1,22 @@
+# Local dry-run config: plain HTTP, no TLS, so you can prove the routing
+# and both backend processes work before touching a real server or domain.
+# Run this first. See torana.prod.toml for the real deployment.
+
+[global]
+log_level = "info"
+metrics_addr = "127.0.0.1:9090"
+
+[[listener]]
+addr = "127.0.0.1:8080"
+protocol = "http"
+
+# More specific route first: config order is match priority.
+[[route]]
+name = "api"
+path = "/api"
+upstream = [{ addr = "http://127.0.0.1:8081" }]
+
+# Catch-all last: anything that isn't /api goes to the frontend.
+[[route]]
+name = "frontend"
+upstream = [{ addr = "http://127.0.0.1:8082" }]

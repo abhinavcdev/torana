@@ -1,0 +1,21 @@
+[Unit]
+Description=demo API backend (behind torana)
+After=network.target
+
+[Service]
+Type=simple
+User=torana
+Group=torana
+WorkingDirectory=/opt/torana-demo/api
+Environment=PORT=8081
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/torana-demo/api
+
+[Install]
+WantedBy=multi-user.target

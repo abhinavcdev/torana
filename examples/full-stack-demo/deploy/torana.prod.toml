@@ -1,0 +1,33 @@
+# Real deployment config: automatic HTTPS via ACME (Let's Encrypt), one
+# listener, one port (443 -- TLS-ALPN-01 validation needs no port 80 at all).
+#
+# Before using this:
+#   1. Point a DNS A/AAAA record at your VPS's public IP (e.g. demo.example.com).
+#   2. Replace "demo.example.com" and the contact email below.
+#   3. Build with `--features acme` (see ../README.md).
+#   4. Open only port 443 in the firewall -- port 80 is not needed.
+
+[global]
+log_level = "info"
+metrics_addr = "127.0.0.1:9090"
+
+[[listener]]
+addr = "0.0.0.0:443"
+protocol = "https"
+
+[listener.acme]
+domains = ["demo.example.com"]
+contact_emails = ["you@example.com"]
+cache_dir = "/var/lib/torana/acme-cache"
+# staging = true   # uncomment while testing DNS/setup -- avoids Let's
+                   # Encrypt's real rate limits on repeated attempts
+
+[[route]]
+name = "api"
+path = "/api"
+upstream = [{ addr = "http://127.0.0.1:8081" }]
+health_check = { path = "/api/health", interval = "10s" }
+
+[[route]]
+name = "frontend"
+upstream = [{ addr = "http://127.0.0.1:8082" }]

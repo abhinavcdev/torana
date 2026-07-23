@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>torana full-stack demo</title>
+<style>
+  body { font-family: -apple-system, system-ui, sans-serif; background: #141110; color: #efe9de;
+         display: flex; align-items: center; justify-content: center; min-height: 100vh; margin: 0; }
+  .card { background: #1c1815; border: 1px solid #2b2620; border-radius: 12px; padding: 40px 48px; text-align: center; }
+  .count { font-size: 64px; font-weight: 700; color: #e9a23b; font-variant-numeric: tabular-nums; }
+  .label { font-size: 13px; letter-spacing: 0.1em; text-transform: uppercase; color: #9c927f; margin-top: 8px; }
+  .meta { margin-top: 20px; font-size: 12px; color: #6f675d; font-family: ui-monospace, monospace; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div class="count" id="count">&mdash;</div>
+    <div class="label">visits served through torana</div>
+    <div class="meta" id="meta">contacting API&hellip;</div>
+  </div>
+  <script>
+    // Frontend and API are two separate origin processes; torana is the
+    // only thing making this feel like one site. This call goes to /api/...
+    // on the SAME host/port the page was loaded from -- torana routes it to
+    // the API upstream, the rest (this page) to the frontend upstream.
+    fetch("/api/visits", { method: "POST" })
+      .then((r) => r.json())
+      .then((data) => {
+        document.getElementById("count").textContent = data.count.toLocaleString();
+        document.getElementById("meta").textContent = "last visit: " + data.last_visit;
+      })
+      .catch((e) => {
+        document.getElementById("meta").textContent = "API unreachable: " + e.message;
+      });
+  </script>
+</body>
+</html>

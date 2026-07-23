@@ -1,0 +1,20 @@
+[Unit]
+Description=demo frontend static server (behind torana)
+After=network.target
+
+[Service]
+Type=simple
+User=torana
+Group=torana
+WorkingDirectory=/opt/torana-demo/frontend
+Environment=PORT=8082
+ExecStart=/usr/bin/node server.js
+Restart=on-failure
+RestartSec=2
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target
